@@ -95,6 +95,17 @@ class BaseSwarm(ABC):
                 "数据异常"
             )
 
+        non_finite_indices = np.flatnonzero(~np.isfinite(fitness))
+        if non_finite_indices.size:
+            invalid_entries = ", ".join(
+                f"{int(index)}={float(fitness[index])!r}"
+                for index in non_finite_indices
+            )
+            raise FloatingPointError(
+                "fitness 包含非有限值，异常索引和值: "
+                f"{invalid_entries}"
+            )
+
         self.fe_count += len(positions)
         return fitness
 

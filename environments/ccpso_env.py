@@ -102,7 +102,13 @@ class CCPSOEnv(gym.Env):
                 f"{np.asarray(action).shape}"
             )
 
-        raw_action = float(np.clip(action[0], -1.0, 1.0))
+        action_value = float(action[0])
+        if not np.isfinite(action_value):
+            raise ValueError(
+                f"动作必须是有限值，实际值为 {action_value!r}"
+            )
+
+        raw_action = float(np.clip(action_value, -1.0, 1.0))
 
         normalized = (raw_action + 1.0) / 2.0
 

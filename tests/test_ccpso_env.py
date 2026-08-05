@@ -1,4 +1,13 @@
+from pathlib import Path
+import sys
+import unittest
+
 import numpy as np
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from environments.ccpso_env import CCPSOEnv
 from swarm.ccpso import CCPSOSwarm
@@ -8,76 +17,144 @@ def sphere(positions):
     return np.sum(positions ** 2, axis=1)
 
 
-def main():
-    swarm = CCPSOSwarm(
-        particles=20,
-        dimensions=10,
-        fun=sphere,
-        lower_bound=-100.0,
-        upper_bound=100.0,
-        max_fe=1000,
-    )
+class TestCCPSOEnvLifecycle(unittest.TestCase):
+    def setUp(self):
+        self.swarm = CCPSOSwarm(
+            particles=4,
+            dimensions=3,
+            fun=sphere,
+            lower_bound=-100.0,
+            upper_bound=100.0,
+            max_fe=16,
+            seed=0,
+        )
+        self.env = CCPSOEnv(
+            swarm=self.swarm,
+            c_min=0.0,
+            c_max=1.5,
+            optimum=0.0,
+        )
 
-    env = CCPSOEnv(
-        swarm=swarm,
-        conv_min=0.0,
-        conv_max=1.5,
-        optimum=0.0,
-    )
+    def assert_valid_observation(self, observation):
+        self.assertEqual(observation.shape, (6,))
+        self.assertEqual(observation.dtype, np.float32)
+        self.assertTrue(self.env.observation_space.contains(observation))
 
-    observation, info = env.reset(seed=42)
+    def test_non_finite_actions_do_not_mutate_episode(self):
+        self.env.reset(seed=0)
 
-    assert observation.shape == (5,)
-    assert observation.dtype == np.float32
-    assert np.isfinite(observation).all()
-    assert env.observation_space.contains(observation)
+        for action_value in (np.nan, np.inf, -np.inf):
+            with self.subTest(action_value=action_value):
+                fe_count = self.swarm.fe_count
+                positions = self.swarm.positions.copy()
+                q_positions = self.swarm.q_positions.copy()
+                generation_prepared = self.swarm.generation_prepared
 
-    assert env.action_space.shape == (1,)
-    assert info["fe_count"] == 20
+                with self.assertRaises(ValueError) as context:
+                    self.env.step(
+                        np.array([action_value], dtype=np.float32)
+                    )
 
-    episode_reward = 0.0
-    step_count = 0
+                self.assertIn(
+                    repr(float(action_value)),
+                    str(context.exception),
+                )
+                self.assertEqual(self.swarm.fe_count, fe_count)
+                np.testing.assert_array_equal(
+                    self.swarm.positions,
+                    positions,
+                )
+                np.testing.assert_array_equal(
+                    self.swarm.q_positions,
+                    q_positions,
+                )
+                self.assertIs(
+                    self.swarm.generation_prepared,
+                    generation_prepared,
+                )
 
-    while True:
-        # action=0 应映射为 Conv_a=0.75
+    def test_finite_out_of_range_actions_are_clipped(self):
+        for action_value, expected_raw, expected_conv in (
+            (2.0, 1.0, 1.5),
+            (-2.0, -1.0, 0.0),
+        ):
+            with self.subTest(action_value=action_value):
+                self.env.reset(seed=0)
+                _, _, _, _, info = self.env.step(
+                    np.array([action_value], dtype=np.float32)
+                )
+
+                self.assertAlmostEqual(
+                    info["raw_action"],
+                    expected_raw,
+                )
+                self.assertAlmostEqual(
+                    info["conv"],
+                    expected_conv,
+                )
+
+    def test_reset_step_terminal_lifecycle(self):
+        reset_result = self.env.reset(seed=0)
+
+        self.assertIsInstance(reset_result, tuple)
+        self.assertEqual(len(reset_result), 2)
+
+        observation, info = reset_result
+        self.assert_valid_observation(observation)
+        self.assertIsInstance(info, dict)
+
         action = np.array([0.0], dtype=np.float32)
+        step_count = 0
+        normal_step_seen = False
 
-        (
-            next_observation,
-            reward,
-            terminated,
-            truncated,
-            info,
-        ) = env.step(action)
+        while True:
+            q_used_by_step = self.swarm.q_positions.copy()
+            step_result = self.env.step(action)
 
-        assert next_observation.shape == (5,)
-        assert next_observation.dtype == np.float32
-        assert np.isfinite(next_observation).all()
-        assert env.observation_space.contains(next_observation)
+            self.assertIsInstance(step_result, tuple)
+            self.assertEqual(len(step_result), 5)
 
-        assert np.isfinite(reward)
-        assert 0.0 <= info["conv"] <= 1.5
-        assert np.isclose(info["conv"], 0.75)
-        assert info["fe_count"] <= 1000
+            (
+                observation,
+                reward,
+                terminated,
+                truncated,
+                info,
+            ) = step_result
 
-        episode_reward += reward
-        step_count += 1
+            step_count += 1
+            self.assert_valid_observation(observation)
+            self.assertIsInstance(info, dict)
+            self.assertTrue(np.isfinite(reward))
+            self.assertAlmostEqual(info["conv"], 0.75)
 
-        if terminated or truncated:
-            break
+            if terminated:
+                self.assertIs(truncated, False)
+                self.assertIs(info["terminal"], True)
+                self.assertIs(
+                    self.swarm.generation_prepared,
+                    False,
+                )
+                np.testing.assert_array_equal(
+                    self.swarm.q_positions,
+                    q_used_by_step,
+                )
+                break
 
-    assert swarm.fe_count == 1000
-    assert truncated
+            normal_step_seen = True
+            self.assertIs(terminated, False)
+            self.assertIs(truncated, False)
 
-    print("Environment reset: passed")
-    print("Observation shape/range: passed")
-    print("Action to Conv_a mapping: passed")
-    print("Full episode: passed")
-    print("steps:", step_count)
-    print("final FE:", swarm.fe_count)
-    print("final best:", swarm.gbest_fitness)
-    print("episode reward:", episode_reward)
+        self.assertTrue(normal_step_seen)
+        self.assertEqual(step_count, 3)
+        self.assertEqual(
+            self.swarm.fe_count,
+            self.swarm.max_fe,
+        )
+
+        with self.assertRaises(RuntimeError):
+            self.env.step(action)
 
 
 if __name__ == "__main__":
-    main()
+    unittest.main()
