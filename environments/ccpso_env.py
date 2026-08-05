@@ -408,26 +408,44 @@ class CCPSOEnv(gym.Env):
                 后续研究多步信用传播时，只修改 TD target，
                 暂时不混入多样性奖励或阶段奖励。
                 """
-        improvement = max(
-            float(old_best - new_best),
-            0.0,
+        def require_finite(name, value):
+            value = float(value)
+            if not np.isfinite(value):
+                raise FloatingPointError(
+                    f"{name} 必须是有限值，实际值为 {value!r}"
+                )
+            return value
+
+        old_best = require_finite("old_best", old_best)
+        new_best = require_finite("new_best", new_best)
+        initial_fitness_scale = require_finite(
+            "initial_fitness_scale",
+            self.initial_fitness_scale,
         )
 
-        scaled_improvement = (
-                improvement
-                / max(self.initial_fitness_scale, 1e-12)
+        improvement = require_finite(
+            "improvement",
+            old_best - new_best,
+        )
+        improvement = max(improvement, 0.0)
+
+        scaled_improvement = require_finite(
+            "scaled_improvement",
+            improvement / max(initial_fitness_scale, 1e-12),
         )
 
-        progress = float(
-            np.log1p(scaled_improvement)
+        progress = require_finite(
+            "progress",
+            np.log1p(scaled_improvement),
         )
 
-        reward = float(
+        reward = require_finite(
+            "reward",
             np.clip(
                 progress,
                 0.0,
                 5.0,
-            )
+            ),
         )
 
         return reward, progress

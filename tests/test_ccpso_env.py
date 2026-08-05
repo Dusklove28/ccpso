@@ -93,6 +93,57 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
                     expected_conv,
                 )
 
+    def test_reward_rejects_non_finite_inputs(self):
+        cases = (
+            ("old_best", np.nan, 0.0, 1.0, np.nan),
+            ("new_best", 1.0, np.inf, 1.0, np.inf),
+            (
+                "initial_fitness_scale",
+                1.0,
+                0.0,
+                np.inf,
+                np.inf,
+            ),
+        )
+
+        for name, old_best, new_best, scale, invalid_value in cases:
+            with self.subTest(name=name):
+                self.env.initial_fitness_scale = scale
+
+                with self.assertRaises(FloatingPointError) as context:
+                    self.env._calculate_reward(old_best, new_best)
+
+                message = str(context.exception)
+                self.assertIn(name, message)
+                self.assertIn(repr(float(invalid_value)), message)
+
+    def test_reward_rejects_extreme_finite_overflow(self):
+        max_float = np.finfo(np.float64).max
+
+        self.env.initial_fitness_scale = 1.0
+        with self.assertRaises(FloatingPointError) as subtraction_error:
+            self.env._calculate_reward(max_float, -max_float)
+        self.assertIn("improvement", str(subtraction_error.exception))
+
+        self.env.initial_fitness_scale = np.finfo(np.float64).tiny
+        with self.assertRaises(FloatingPointError) as division_error:
+            self.env._calculate_reward(max_float, 0.0)
+        self.assertIn(
+            "scaled_improvement",
+            str(division_error.exception),
+        )
+
+    def test_reward_normal_input_is_unchanged(self):
+        self.env.initial_fitness_scale = 2.0
+
+        reward, progress = self.env._calculate_reward(10.0, 8.0)
+        expected = float(np.log1p(1.0))
+
+        self.assertEqual(progress, expected)
+        self.assertEqual(reward, expected)
+        self.assertGreaterEqual(reward, 0.0)
+        self.assertLessEqual(reward, 5.0)
+
     def test_reset_step_terminal_lifecycle(self):
         reset_result = self.env.reset(seed=0)
 
