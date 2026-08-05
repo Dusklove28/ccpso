@@ -1,9 +1,22 @@
+# IDE settings
 .vscode/
+.idea/
+
+# Python caches and test artifacts
 __pycache__/
-*.pyc
-.venv
-venv
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Build artifacts
 build/
 dist/
-*.iml
-*.xml
+*.egg-info/
+
+# Experiment outputs
+runs/
