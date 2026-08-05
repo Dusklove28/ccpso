@@ -144,6 +144,41 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
         self.assertGreaterEqual(reward, 0.0)
         self.assertLessEqual(reward, 5.0)
 
+    def test_recent_progress_requires_complete_window(self):
+        self.env.recent_window = 3
+        self.env.initial_fitness_scale = 2.0
+
+        for best_history in (
+            [10.0],
+            [10.0, 9.0],
+            [10.0, 9.0, 8.0],
+        ):
+            with self.subTest(history_length=len(best_history)):
+                self.env.best_history = best_history
+                self.assertEqual(
+                    self.env._calculate_recent_progress(),
+                    0.0,
+                )
+
+        self.env.best_history = [10.0, 9.0, 8.0, 7.0]
+        expected = float(
+            np.clip(
+                np.tanh(np.log1p(3.0 / 2.0)),
+                0.0,
+                1.0,
+            )
+        )
+        self.assertEqual(
+            self.env._calculate_recent_progress(),
+            expected,
+        )
+
+        self.env.best_history = [10.0, 10.0, 10.0, 10.0]
+        self.assertEqual(
+            self.env._calculate_recent_progress(),
+            0.0,
+        )
+
     def test_reset_step_terminal_lifecycle(self):
         reset_result = self.env.reset(seed=0)
 

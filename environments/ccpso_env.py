@@ -182,7 +182,7 @@ class CCPSOEnv(gym.Env):
 
     # 计算最近提升
     def _calculate_recent_progress(self) -> float:
-        if len(self.best_history) < 2:
+        if len(self.best_history) < self.recent_window + 1:
             return 0.0
 
         start_index = max(
