@@ -78,19 +78,30 @@ class BaseSwarm(ABC):
         return self._reset_algorithm_state()
 
     def evaluate(self,positions):
-        if self.fe_count + len(positions) > self.max_fe:
-            raise RuntimeError(
-                "FE消耗完毕"
-            )
-
         positions = np.asarray(
             positions,
             dtype=np.float64,
         )
 
+        if (
+            positions.ndim != 2
+            or positions.shape[1] != self.dimensions
+        ):
+            raise ValueError(
+                f"positions 实际 shape 为 {positions.shape}，"
+                "期望格式为 (n, dimensions)，"
+                f"其中 dimensions={self.dimensions}"
+            )
+
+        evaluation_count = positions.shape[0]
+        if self.fe_count + evaluation_count > self.max_fe:
+            raise RuntimeError(
+                "FE消耗完毕"
+            )
+
         fitness = self.fun(positions)
         fitness = np.asarray(fitness, dtype=np.float64)
-        if fitness.shape != (len(positions),):
+        if fitness.shape != (evaluation_count,):
             raise RuntimeError(
                 "数据异常"
             )
@@ -106,7 +117,7 @@ class BaseSwarm(ABC):
                 f"{invalid_entries}"
             )
 
-        self.fe_count += len(positions)
+        self.fe_count += evaluation_count
         return fitness
 
     def update_bests(self, new_fitness):
