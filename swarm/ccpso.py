@@ -30,6 +30,7 @@ class CCPSOSwarm(BaseSwarm):
         self.c1 = C1
         self.c2 = C2
         self.generation_prepared = False
+        self.boundary_clip_ratio = 0.0
 
     # 在reset后，初始化算法特定变量
     def _reset_algorithm_state(self):
@@ -42,6 +43,7 @@ class CCPSOSwarm(BaseSwarm):
         self.c2_r2=None
         self.c_sum=None
         self.generation_prepared = False
+        self.boundary_clip_ratio = 0.0
 
     # 3. 计算榜样项Q
     def _calculate_q(self):
@@ -93,18 +95,26 @@ class CCPSOSwarm(BaseSwarm):
         q=self.q_positions # 上一次迭代的Q，初始时会预先计算一次，以便Actor使用
         p = a1 * (self.positions - q) + a2 * (self.previous_positions - q)
         # 4.根据二阶公式生成新位置
-        x = q + conv * p
+        candidate_positions = q + conv * p
 
         # 5. 边界处理-位置，速度无需考虑
         # implicit_vs = X - self.positions
         # implicit_vs = np.clip(implicit_vs, self.min_v, self.max_v)
-        new_x = np.clip(x, self.lower_bound, self.upper_bound)
+        positions = np.clip(
+            candidate_positions,
+            self.lower_bound,
+            self.upper_bound,
+        )
+        self.boundary_clip_ratio = float(
+            np.count_nonzero(candidate_positions != positions)
+            / candidate_positions.size
+        )
 
         # 6.更新 previous_positions
         self.previous_positions = current_positions
-        self.positions = new_x.copy()
+        self.positions = positions.copy()
         # 7. 计算新fitness
-        self.fitness = self.evaluate(new_x)
+        self.fitness = self.evaluate(positions)
         # 8. 更新pbest&gbest
         self.update_bests(self.fitness)
         # 9.更新标志

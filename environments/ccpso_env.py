@@ -214,6 +214,9 @@ class CCPSOEnv(gym.Env):
                 else float(raw_action)
             ),
             "reward_progress": float(reward_progress),
+            "boundary_clip_ratio": float(
+                self.swarm.boundary_clip_ratio
+            ),
             "mean_movement": float(self.mean_movement),
             "recent_progress": float(self.recent_progress),
             "stagnation_steps": int(self.stagnation_steps),

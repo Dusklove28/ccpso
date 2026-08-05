@@ -343,6 +343,7 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
         observation, info = reset_result
         self.assert_valid_observation(observation)
         self.assertIsInstance(info, dict)
+        self.assertEqual(info["boundary_clip_ratio"], 0.0)
 
         action = np.array([0.0], dtype=np.float32)
         step_count = 0
@@ -368,6 +369,9 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
             self.assertIsInstance(info, dict)
             self.assertTrue(np.isfinite(reward))
             self.assertAlmostEqual(info["conv"], 0.75)
+            self.assertIn("boundary_clip_ratio", info)
+            self.assertGreaterEqual(info["boundary_clip_ratio"], 0.0)
+            self.assertLessEqual(info["boundary_clip_ratio"], 1.0)
 
             if terminated:
                 self.assertIs(truncated, False)
