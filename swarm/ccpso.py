@@ -35,8 +35,6 @@ class CCPSOSwarm(BaseSwarm):
     # 在reset后，初始化算法特定变量
     def _reset_algorithm_state(self):
         self.previous_positions = self.positions.copy()
-        # 初始收敛性系数C
-        self.current_conv = 1.5
 
         self.q_positions=None
         self.c1_r1=None
