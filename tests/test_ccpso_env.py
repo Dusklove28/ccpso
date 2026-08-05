@@ -1,7 +1,7 @@
 import numpy as np
 
-from learning_ddpg.environments.ccpso_env import CCPSOEnv
-from learning_ddpg.swarm.ccpso import CCPSOSwarm
+from environments.ccpso_env import CCPSOEnv
+from swarm.ccpso import CCPSOSwarm
 
 
 def sphere(positions):
