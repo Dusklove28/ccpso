@@ -28,17 +28,80 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
             max_fe=16,
             seed=0,
         )
-        self.env = CCPSOEnv(
-            swarm=self.swarm,
-            c_min=0.0,
-            c_max=1.5,
-            optimum=0.0,
-        )
+        self.env = self.make_env()
+
+    def make_env(self, **overrides):
+        parameters = {
+            "swarm": self.swarm,
+            "c_min": 0.0,
+            "c_max": 1.5,
+            "optimum": 0.0,
+        }
+        parameters.update(overrides)
+        return CCPSOEnv(**parameters)
+
+    def assert_invalid_env_parameter(self, name, value, **overrides):
+        parameters = {name: value, **overrides}
+        with self.assertRaises(ValueError) as context:
+            self.make_env(**parameters)
+
+        message = str(context.exception)
+        self.assertIn(name, message)
+        self.assertIn(repr(value), message)
 
     def assert_valid_observation(self, observation):
         self.assertEqual(observation.shape, (6,))
         self.assertEqual(observation.dtype, np.float32)
         self.assertTrue(self.env.observation_space.contains(observation))
+
+    def test_rejects_non_finite_c_bounds(self):
+        cases = (
+            ("c_min", np.nan),
+            ("c_min", -np.inf),
+            ("c_max", np.inf),
+        )
+        for name, value in cases:
+            with self.subTest(name=name, value=value):
+                self.assert_invalid_env_parameter(name, value)
+
+    def test_rejects_reversed_c_bounds(self):
+        with self.assertRaises(ValueError) as context:
+            self.make_env(c_min=1.0, c_max=0.5)
+
+        message = str(context.exception)
+        self.assertIn("c_min", message)
+        self.assertIn("1.0", message)
+        self.assertIn("c_max", message)
+        self.assertIn("0.5", message)
+
+    def test_rejects_invalid_window_parameters(self):
+        for name in ("recent_window", "stagnation_horizon"):
+            for value in (3.0, True, 0, -1):
+                with self.subTest(name=name, value=value):
+                    self.assert_invalid_env_parameter(name, value)
+
+    def test_rejects_invalid_movement_log_floor(self):
+        for value in (np.nan, np.inf, 0.0, 1.0, -0.1, 1.1):
+            with self.subTest(value=value):
+                self.assert_invalid_env_parameter(
+                    "movement_log_floor",
+                    value,
+                )
+
+    def test_accepts_equal_c_bounds_and_valid_parameters(self):
+        self.env = self.make_env(
+            c_min=0.75,
+            c_max=0.75,
+            recent_window=np.int64(3),
+            stagnation_horizon=np.int32(4),
+            movement_log_floor=1e-4,
+        )
+
+        observation, info = self.env.reset(seed=0)
+
+        self.assert_valid_observation(observation)
+        self.assertIsInstance(info, dict)
+        self.assertEqual(self.env.c_min, self.env.c_max)
 
     def test_non_finite_actions_do_not_mutate_episode(self):
         self.env.reset(seed=0)

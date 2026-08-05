@@ -47,21 +47,74 @@ class CCPSOEnv(gym.Env):
     ):
         super().__init__()
 
+        def require_finite_float(name, value):
+            try:
+                value = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(
+                    f"{name} 必须是有限数值，实际值为 {value!r}"
+                ) from exc
+
+            if not np.isfinite(value):
+                raise ValueError(
+                    f"{name} 必须是有限数值，实际值为 {value!r}"
+                )
+            return value
+
+        def require_integer(name, value):
+            if (
+                isinstance(value, (bool, np.bool_))
+                or not isinstance(value, (int, np.integer))
+            ):
+                raise ValueError(
+                    f"{name} 必须是整数，实际值为 {value!r}"
+                )
+            return int(value)
+
         self.swarm = swarm
         # C 的动作范围
-        self.c_min = float(c_min)
-        self.c_max = float(c_max)
+        self.c_min = require_finite_float("c_min", c_min)
+        self.c_max = require_finite_float("c_max", c_max)
+        if self.c_min > self.c_max:
+            raise ValueError(
+                "c_min 必须小于等于 c_max，实际值为 "
+                f"c_min={c_min!r}, c_max={c_max!r}"
+            )
         # optimum 不进入状态，本版本仅用于最终误差日志
         self.optimum = float(optimum)
         self.function_id = None if function_id is None else int(function_id)
 
-        self.recent_window = int(recent_window)
-        self.stagnation_horizon = int(stagnation_horizon)
+        self.recent_window = require_integer(
+            "recent_window",
+            recent_window,
+        )
+        self.stagnation_horizon = require_integer(
+            "stagnation_horizon",
+            stagnation_horizon,
+        )
+        if self.recent_window < 1:
+            raise ValueError(
+                "recent_window 必须大于等于 1，实际值为 "
+                f"{recent_window!r}"
+            )
+        if self.stagnation_horizon <= 0:
+            raise ValueError(
+                "stagnation_horizon 必须大于 0，实际值为 "
+                f"{stagnation_horizon!r}"
+            )
 
         self.stagnation_abs_tol = float(stagnation_abs_tol)
         self.stagnation_rel_tol = float(stagnation_rel_tol)
 
-        self.movement_log_floor = float(movement_log_floor)
+        self.movement_log_floor = require_finite_float(
+            "movement_log_floor",
+            movement_log_floor,
+        )
+        if not 0.0 < self.movement_log_floor < 1.0:
+            raise ValueError(
+                "movement_log_floor 必须严格位于 (0, 1)，"
+                f"实际值为 {movement_log_floor!r}"
+            )
 
         # Actor 输出归一化连续动作
         self.action_space = gym.spaces.Box(
