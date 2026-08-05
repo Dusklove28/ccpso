@@ -4,8 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 # Implementation of Twin Delayed Deep Deterministic Policy Gradients (TD3)
 # Paper: https://arxiv.org/abs/1802.09477
@@ -63,6 +61,14 @@ class Critic(nn.Module):
 
 
 class TD3(object):
+    @staticmethod
+    def _resolve_device(device):
+        if device is None or device == "auto":
+            return torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
+        return torch.device(device)
+
     def __init__(
             self,
             state_dim,
@@ -72,15 +78,17 @@ class TD3(object):
             tau=0.005,
             policy_noise=0.2,
             noise_clip=0.5,
-            policy_freq=2
+            policy_freq=2,
+            device=None,
     ):
+        self.device = self._resolve_device(device)
 
-        self.actor = Actor(state_dim, action_dim, max_action).to(device)
-        self.actor_target = copy.deepcopy(self.actor)
+        self.actor = Actor(state_dim, action_dim, max_action).to(self.device)
+        self.actor_target = copy.deepcopy(self.actor).to(self.device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=3e-4)
 
-        self.critic = Critic(state_dim, action_dim).to(device)
-        self.critic_target = copy.deepcopy(self.critic)
+        self.critic = Critic(state_dim, action_dim).to(self.device)
+        self.critic_target = copy.deepcopy(self.critic).to(self.device)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
 
         self.max_action = max_action
@@ -93,7 +101,7 @@ class TD3(object):
         self.total_it = 0
 
     def select_action(self, state):
-        state = torch.FloatTensor(state.reshape(1, -1)).to(device)
+        state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
         return self.actor(state).cpu().data.numpy().flatten()
 
     def train(self, replay_buffer, batch_size=256):
@@ -154,10 +162,24 @@ class TD3(object):
         torch.save(self.actor_optimizer.state_dict(), filename + "_actor_optimizer")
 
     def load(self, filename):
-        self.critic.load_state_dict(torch.load(filename + "_critic"))
-        self.critic_optimizer.load_state_dict(torch.load(filename + "_critic_optimizer"))
+        self.critic.load_state_dict(
+            torch.load(filename + "_critic", map_location=self.device)
+        )
+        self.critic_optimizer.load_state_dict(
+            torch.load(
+                filename + "_critic_optimizer",
+                map_location=self.device,
+            )
+        )
         self.critic_target = copy.deepcopy(self.critic)
 
-        self.actor.load_state_dict(torch.load(filename + "_actor"))
-        self.actor_optimizer.load_state_dict(torch.load(filename + "_actor_optimizer"))
+        self.actor.load_state_dict(
+            torch.load(filename + "_actor", map_location=self.device)
+        )
+        self.actor_optimizer.load_state_dict(
+            torch.load(
+                filename + "_actor_optimizer",
+                map_location=self.device,
+            )
+        )
         self.actor_target = copy.deepcopy(self.actor)

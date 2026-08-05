@@ -3,6 +3,7 @@ import sys
 import unittest
 
 import numpy as np
+from gymnasium.utils.env_checker import check_env
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,9 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
         }
         parameters.update(overrides)
         return CCPSOEnv(**parameters)
+
+    def test_passes_gymnasium_env_checker(self):
+        check_env(self.env, skip_render_check=True)
 
     def assert_invalid_env_parameter(self, name, value, **overrides):
         parameters = {name: value, **overrides}
