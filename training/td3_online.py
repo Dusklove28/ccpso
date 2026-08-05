@@ -47,6 +47,27 @@ class TD3OnlineConfig:
 
 
 def train_online(env, policy, replay_buffer, config):
+    """Run online TD3 control over independent CCPSO optimizations.
+
+    Counter semantics are strict:
+
+    - An ``episode`` is one complete, independent CCPSO optimization. The
+      swarm is reset at the start of each episode, while the TD3 policy and
+      replay buffer persist across episodes.
+    - ``episode_step`` is the number of CCPSO generations already executed
+      in the current episode and restarts from one after each reset.
+    - ``global_step`` is the cumulative number of ``env.step()`` calls made
+      within this invocation of ``train_online()``.
+    - ``total_it`` is TD3's cumulative number of gradient updates.
+
+    One ``global_step`` equals one ``env.step()``, one complete swarm update,
+    and one RL transition. The initial population evaluation performed by
+    ``reset()`` is not counted as a ``global_step``.
+
+    The warmup boundary is inclusive. For ``learning_starts=7``, global steps
+    1 through 7 use warmup actions; updates may begin after the transition at
+    global step 7 is stored; Actor actions begin at global step 8.
+    """
     if not isinstance(config, TD3OnlineConfig):
         raise TypeError(
             "config must be an instance of TD3OnlineConfig"
@@ -54,6 +75,7 @@ def train_online(env, policy, replay_buffer, config):
 
     action_rng = np.random.default_rng(config.seed)
     episode_results = []
+    step_results = []
     update_results = []
     total_steps = 0
     warmup_steps = 0
@@ -69,7 +91,18 @@ def train_online(env, policy, replay_buffer, config):
         truncated = False
 
         while not (terminated or truncated):
+            action_state = np.asarray(
+                state,
+                dtype=np.float32,
+            ).copy()
+            if action_state.shape != (6,):
+                raise ValueError(
+                    "train_online expected a six-dimensional state, "
+                    f"got shape {action_state.shape}"
+                )
+
             if total_steps < config.learning_starts:
+                action_source = "warmup"
                 action = action_rng.uniform(
                     low=-1.0,
                     high=1.0,
@@ -77,8 +110,9 @@ def train_online(env, policy, replay_buffer, config):
                 ).astype(np.float32)
                 warmup_steps += 1
             else:
+                action_source = "actor"
                 actor_action = policy.select_action(
-                    np.asarray(state, dtype=np.float32)
+                    action_state
                 )
                 exploration = action_rng.normal(
                     loc=0.0,
@@ -113,6 +147,36 @@ def train_online(env, policy, replay_buffer, config):
             episode_steps += 1
             total_steps += 1
             c_values.append(float(info["conv"]))
+            step_results.append(
+                {
+                    "episode_index": int(episode_index),
+                    "episode_seed": int(episode_seed),
+                    "global_step": int(total_steps),
+                    "episode_step": int(episode_steps),
+                    "action_source": action_source,
+                    "reward": float(reward),
+                    "episode_return": float(episode_return),
+                    "fe_count": int(info["fe_count"]),
+                    "gbest_fitness": float(info["gbest_fitness"]),
+                    "gap": float(info["gap"]),
+                    "raw_action": float(info["raw_action"]),
+                    "c_value": float(info["conv"]),
+                    "mean_movement": float(info["mean_movement"]),
+                    "recent_progress": float(info["recent_progress"]),
+                    "stagnation_steps": int(info["stagnation_steps"]),
+                    "boundary_clip_ratio": float(
+                        info["boundary_clip_ratio"]
+                    ),
+                    "terminated": bool(terminated),
+                    "truncated": bool(truncated),
+                    "state_fe_progress": float(action_state[0]),
+                    "state_recent_progress": float(action_state[1]),
+                    "state_position_diversity": float(action_state[2]),
+                    "state_q_diversity": float(action_state[3]),
+                    "state_movement": float(action_state[4]),
+                    "state_stagnation": float(action_state[5]),
+                }
+            )
 
             if (
                 total_steps >= config.learning_starts
@@ -125,9 +189,9 @@ def train_online(env, policy, replay_buffer, config):
                     )
                     update_results.append(
                         {
+                            "global_step": int(total_steps),
                             "episode_index": int(episode_index),
                             "episode_step": int(episode_steps),
-                            "total_step": int(total_steps),
                             **metrics,
                         }
                     )
@@ -151,6 +215,7 @@ def train_online(env, policy, replay_buffer, config):
 
     return {
         "episodes": episode_results,
+        "steps": step_results,
         "updates": update_results,
         "total_steps": int(total_steps),
         "total_updates": int(len(update_results)),

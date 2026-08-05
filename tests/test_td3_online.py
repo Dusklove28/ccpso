@@ -128,6 +128,7 @@ class TestTD3OnlineTraining(unittest.TestCase):
             self.assertLessEqual(episode["c_max"], 1.5)
 
         self.assertEqual(result["total_steps"], 9)
+        self.assertEqual(len(result["steps"]), result["total_steps"])
         self.assertEqual(len(replay_buffer), result["total_steps"])
         self.assertEqual(result["warmup_steps"], 7)
         self.assertEqual(result["actor_steps"], 2)
@@ -138,6 +139,122 @@ class TestTD3OnlineTraining(unittest.TestCase):
         self.assertEqual(result["total_updates"], expected_updates)
         self.assertEqual(len(result["updates"]), expected_updates)
         self.assertEqual(policy.total_it, expected_updates)
+
+        steps = result["steps"]
+        self.assertEqual(
+            [step["global_step"] for step in steps],
+            list(range(1, 10)),
+        )
+        self.assertEqual(
+            [step["episode_index"] for step in steps],
+            [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        )
+        self.assertEqual(
+            [step["episode_seed"] for step in steps],
+            [123, 123, 123, 124, 124, 124, 125, 125, 125],
+        )
+        self.assertEqual(
+            [step["episode_step"] for step in steps],
+            [1, 2, 3] * 3,
+        )
+        self.assertEqual(
+            sum(step["action_source"] == "warmup" for step in steps),
+            result["warmup_steps"],
+        )
+        self.assertEqual(
+            sum(step["action_source"] == "actor" for step in steps),
+            result["actor_steps"],
+        )
+        self.assertEqual(
+            [step["action_source"] for step in steps],
+            ["warmup"] * 7 + ["actor"] * 2,
+        )
+        self.assertEqual(steps[6]["global_step"], 7)
+        self.assertEqual(steps[6]["action_source"], "warmup")
+        self.assertEqual(steps[7]["global_step"], 8)
+        self.assertEqual(steps[7]["action_source"], "actor")
+
+        state_fields = (
+            "state_fe_progress",
+            "state_recent_progress",
+            "state_position_diversity",
+            "state_q_diversity",
+            "state_movement",
+            "state_stagnation",
+        )
+        for episode_index in range(3):
+            episode_steps = [
+                step
+                for step in steps
+                if step["episode_index"] == episode_index
+            ]
+            self.assertEqual(
+                [step["terminated"] for step in episode_steps],
+                [False, False, True],
+            )
+            self.assertTrue(
+                all(not step["truncated"] for step in episode_steps)
+            )
+            np.testing.assert_allclose(
+                [step["state_fe_progress"] for step in episode_steps],
+                [0.25, 0.5, 0.75],
+                rtol=0.0,
+                atol=0.0,
+            )
+            self.assertEqual(
+                [step["fe_count"] for step in episode_steps],
+                [8, 12, 16],
+            )
+            cumulative_return = 0.0
+            for step in episode_steps:
+                cumulative_return += step["reward"]
+                self.assertAlmostEqual(
+                    step["episode_return"],
+                    cumulative_return,
+                )
+
+        for step in steps:
+            self.assertIn(step["action_source"], ("warmup", "actor"))
+            self.assertTrue(np.isfinite(step["reward"]))
+            self.assertTrue(np.isfinite(step["episode_return"]))
+            self.assertTrue(np.isfinite(step["gbest_fitness"]))
+            self.assertGreaterEqual(step["gap"], 0.0)
+            self.assertGreaterEqual(step["raw_action"], -1.0)
+            self.assertLessEqual(step["raw_action"], 1.0)
+            self.assertGreaterEqual(step["c_value"], 0.0)
+            self.assertLessEqual(step["c_value"], 1.5)
+            self.assertTrue(np.isfinite(step["mean_movement"]))
+            self.assertGreaterEqual(step["recent_progress"], 0.0)
+            self.assertLessEqual(step["recent_progress"], 1.0)
+            self.assertGreaterEqual(step["stagnation_steps"], 0)
+            self.assertGreaterEqual(step["boundary_clip_ratio"], 0.0)
+            self.assertLessEqual(step["boundary_clip_ratio"], 1.0)
+            for field in state_fields:
+                self.assertTrue(np.isfinite(step[field]), msg=field)
+                self.assertGreaterEqual(step[field], 0.0, msg=field)
+                self.assertLessEqual(step[field], 1.0, msg=field)
+
+        update_contexts = [
+            (
+                update["global_step"],
+                update["episode_index"],
+                update["episode_step"],
+            )
+            for update in result["updates"]
+        ]
+        self.assertEqual(
+            update_contexts,
+            [(7, 2, 1), (8, 2, 2), (9, 2, 3)],
+        )
+        self.assertEqual(
+            [update["total_it"] for update in result["updates"]],
+            [1, 2, 3],
+        )
+        for update in result["updates"]:
+            self.assertNotIn("total_step", update)
+            self.assertIn("critic_loss", update)
+            self.assertIn("actor_updated", update)
+            self.assertIn("target_q_mean", update)
 
         terminal_masks = replay_buffer.bootstrap_mask[
             :len(replay_buffer),
