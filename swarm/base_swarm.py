@@ -13,25 +13,64 @@ class BaseSwarm(ABC):
                  max_fe,
                  seed=None,):
 
+        def require_integer(name, value):
+            if (
+                isinstance(value, (bool, np.bool_))
+                or not isinstance(value, (int, np.integer))
+            ):
+                raise ValueError(
+                    f"{name} 必须是整数，实际值为 {value!r}"
+                )
+            return int(value)
+
+        def broadcast_bound(name, value):
+            try:
+                bound = np.broadcast_to(
+                    np.asarray(value, dtype=np.float64),
+                    (self.dimensions,),
+                ).copy()
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{name} 无法广播到 ({self.dimensions},)，"
+                    f"实际值为 {value!r}"
+                ) from exc
+
+            if not np.all(np.isfinite(bound)):
+                raise ValueError(
+                    f"{name} 必须全部为有限值，实际值为 {value!r}"
+                )
+            return bound
+
         self.fun = fun
-        self.particles = int(particles)
-        self.dimensions = int(dimensions)
-        self.lower_bound = np.broadcast_to(
-            np.asarray(lower_bound, dtype=np.float64),
-            (self.dimensions,),
-        ).copy()
-        self.upper_bound = np.broadcast_to(
-            np.asarray(upper_bound, dtype=np.float64),
-            (self.dimensions,),
-        ).copy()
+        self.particles = require_integer("particles", particles)
+        self.dimensions = require_integer("dimensions", dimensions)
+        self.max_fe = require_integer("max_fe", max_fe)
+
+        if self.particles <= 0:
+            raise ValueError(
+                f"particles 必须大于 0，实际值为 {particles!r}"
+            )
+        if self.dimensions <= 0:
+            raise ValueError(
+                f"dimensions 必须大于 0，实际值为 {dimensions!r}"
+            )
+        if self.max_fe < self.particles:
+            raise ValueError(
+                f"max_fe 必须大于等于 particles，实际值为 "
+                f"max_fe={max_fe!r}, particles={particles!r}"
+            )
+
+        self.lower_bound = broadcast_bound("lower_bound", lower_bound)
+        self.upper_bound = broadcast_bound("upper_bound", upper_bound)
 
         if np.any(self.lower_bound >= self.upper_bound):
             raise ValueError(
-                "lower_bound 必须逐维小于 upper_bound"
+                "lower_bound 必须逐维小于 upper_bound，实际值为 "
+                f"lower_bound={lower_bound!r}, "
+                f"upper_bound={upper_bound!r}"
             )
         self.min_v = None
         self.max_v = None
-        self.max_fe = max_fe
 
         self.rng = np.random.default_rng(seed)
 

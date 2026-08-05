@@ -179,6 +179,51 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
             0.0,
         )
 
+    def test_observation_rejects_unexpected_swarm_shapes(self):
+        expected_shape = (
+            self.swarm.particles,
+            self.swarm.dimensions,
+        )
+        wrong_shape = (2, 2)
+        cases = (
+            ("positions", wrong_shape, expected_shape),
+            ("q_positions", expected_shape, wrong_shape),
+            ("positions", wrong_shape, wrong_shape),
+        )
+
+        for array_name, positions_shape, q_shape in cases:
+            with self.subTest(
+                positions_shape=positions_shape,
+                q_shape=q_shape,
+            ):
+                self.env.reset(seed=0)
+                self.swarm.positions = np.zeros(positions_shape)
+                self.swarm.q_positions = np.zeros(q_shape)
+
+                with self.assertRaises(ValueError) as context:
+                    self.env._get_observation()
+
+                actual_shape = (
+                    positions_shape
+                    if array_name == "positions"
+                    else q_shape
+                )
+                message = str(context.exception)
+                self.assertIn(array_name, message)
+                self.assertIn(str(actual_shape), message)
+                self.assertIn(str(expected_shape), message)
+
+    def test_observation_accepts_expected_swarm_shapes(self):
+        observation, _ = self.env.reset(seed=0)
+        expected_shape = (
+            self.swarm.particles,
+            self.swarm.dimensions,
+        )
+
+        self.assertEqual(self.swarm.positions.shape, expected_shape)
+        self.assertEqual(self.swarm.q_positions.shape, expected_shape)
+        self.assert_valid_observation(observation)
+
     def test_reset_step_terminal_lifecycle(self):
         reset_result = self.env.reset(seed=0)
 

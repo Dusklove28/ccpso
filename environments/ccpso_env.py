@@ -278,11 +278,21 @@ class CCPSOEnv(gym.Env):
             dtype=np.float64,
         )
 
-        if positions.shape != q_positions.shape:
+        expected_shape = (
+            self.swarm.particles,
+            self.swarm.dimensions,
+        )
+
+        if positions.shape != expected_shape:
             raise ValueError(
-                "positions 和 q_positions 的形状必须相同，"
-                f"实际为 {positions.shape} 与 "
-                f"{q_positions.shape}"
+                f"positions 实际 shape 为 {positions.shape}，"
+                f"期望 shape 为 {expected_shape}"
+            )
+
+        if q_positions.shape != expected_shape:
+            raise ValueError(
+                f"q_positions 实际 shape 为 {q_positions.shape}，"
+                f"期望 shape 为 {expected_shape}"
             )
 
         search_diagonal = float(
