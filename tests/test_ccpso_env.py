@@ -136,6 +136,53 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
                     generation_prepared,
                 )
 
+    def test_invalid_action_shapes_report_original_shape_without_mutation(self):
+        self.env.reset(seed=0)
+
+        for action, expected_shape, flattened_shape in (
+            (np.zeros((2, 2), dtype=np.float32), "(2, 2)", "(4,)"),
+            (np.zeros((2,), dtype=np.float32), "(2,)", None),
+        ):
+            with self.subTest(shape=action.shape):
+                fe_count = self.swarm.fe_count
+                positions = self.swarm.positions.copy()
+                q_positions = self.swarm.q_positions.copy()
+                generation_prepared = self.swarm.generation_prepared
+
+                with self.assertRaises(ValueError) as context:
+                    self.env.step(action)
+
+                message = str(context.exception)
+                self.assertIn(expected_shape, message)
+                if flattened_shape is not None:
+                    self.assertNotIn(flattened_shape, message)
+                self.assertEqual(self.swarm.fe_count, fe_count)
+                np.testing.assert_array_equal(
+                    self.swarm.positions,
+                    positions,
+                )
+                np.testing.assert_array_equal(
+                    self.swarm.q_positions,
+                    q_positions,
+                )
+                self.assertIs(
+                    self.swarm.generation_prepared,
+                    generation_prepared,
+                )
+
+    def test_single_element_vector_action_still_executes(self):
+        self.env.reset(seed=0)
+        fe_count = self.swarm.fe_count
+
+        result = self.env.step(np.array([0.0], dtype=np.float32))
+
+        self.assertEqual(len(result), 5)
+        self.assertEqual(
+            self.swarm.fe_count,
+            fe_count + self.swarm.particles,
+        )
+        self.assertAlmostEqual(result[4]["conv"], 0.75)
+
     def test_finite_out_of_range_actions_are_clipped(self):
         for action_value, expected_raw, expected_conv in (
             (2.0, 1.0, 1.5),

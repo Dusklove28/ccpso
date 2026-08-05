@@ -87,8 +87,8 @@ class CCPSOSwarm(BaseSwarm):
             raise RuntimeError("剩余 FE 不足以评估完整种群")
         current_positions = self.positions.copy()
 
-        a1 = 1 + W - self.c_sum
-        a2 = -W
+        a1 = 1 + self.w - self.c_sum
+        a2 = -self.w
 
         q=self.q_positions # 上一次迭代的Q，初始时会预先计算一次，以便Actor使用
         p = a1 * (self.positions - q) + a2 * (self.previous_positions - q)

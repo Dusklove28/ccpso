@@ -147,12 +147,14 @@ class CCPSOEnv(gym.Env):
         action = np.asarray(
             action,
             dtype=np.float32,
-        ).reshape(-1)
+        )
+        original_shape = action.shape
+        action = action.reshape(-1)
 
         if action.size != 1:
             raise ValueError(
                 f"动作必须只包含一个元素，实际形状为 "
-                f"{np.asarray(action).shape}"
+                f"{original_shape}"
             )
 
         action_value = float(action[0])
