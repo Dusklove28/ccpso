@@ -38,7 +38,7 @@ class CCPSOEnv(gym.Env):
             c_min: float = 0.0,
             c_max: float = 1.5,
             optimum: float = 0.0,
-            function_id: int | None = None,
+            function_id: str | int | None = None,
             recent_window: int = 5,
             stagnation_horizon: int = 10,
             stagnation_abs_tol: float = 1e-12,
@@ -82,7 +82,7 @@ class CCPSOEnv(gym.Env):
             )
         # optimum 不进入状态，本版本仅用于最终误差日志
         self.optimum = float(optimum)
-        self.function_id = None if function_id is None else int(function_id)
+        self.function_id = function_id
 
         self.recent_window = require_integer(
             "recent_window",

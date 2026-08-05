@@ -1,59 +1,41 @@
-from learning_ddpg.configs.ccpso_config import (
-    CONV_MAX,
-    CONV_MIN,
-    DIMENSIONS,
-    FUNCTION_IDS,
-    LOWER_BOUND,
-    MAX_FE,
-    PARTICLES,
-    UPPER_BOUND,
-    STAGE_FE,
-    STAGE_ACTION_MODE,
-    STAGE_SMOOTHING_ALPHA,
-    STAGE_MAX_DELTA_C
-)
-from learning_ddpg.environments.ccpso_env import CCPSOEnv
-from learning_ddpg.functions.cec2013 import CEC2013Objective
-from learning_ddpg.swarm.ccpso import CCPSOSwarm
+from environments.ccpso_env import CCPSOEnv
+from problems.spec import ProblemSpec
+from swarm.ccpso import CCPSOSwarm
 
 
-def make_cec2013_env(function_id):
-    function_id = int(function_id)
-    if function_id not in FUNCTION_IDS:
-        raise ValueError(
-            f"F{function_id} is not enabled; configured functions: {FUNCTION_IDS}"
+def make_ccpso_env(
+        problem: ProblemSpec,
+        *,
+        particles: int,
+        max_fe: int,
+        seed: int | None = None,
+        c_min: float = 0.0,
+        c_max: float = 1.5,
+        recent_window: int = 5,
+        stagnation_horizon: int = 10,
+):
+    if not isinstance(problem, ProblemSpec):
+        raise TypeError(
+            "problem must be an instance of ProblemSpec"
         )
 
-    objective = CEC2013Objective(
-        dimensions=DIMENSIONS,
-        function_id=function_id,
-    )
     swarm = CCPSOSwarm(
-        particles=PARTICLES,
-        dimensions=DIMENSIONS,
-        fun=objective,
-        lower_bound=LOWER_BOUND,
-        upper_bound=UPPER_BOUND,
-        max_fe=MAX_FE,
+        particles=particles,
+        dimensions=problem.dimensions,
+        fun=problem.evaluate,
+        lower_bound=problem.lower_bound,
+        upper_bound=problem.upper_bound,
+        max_fe=max_fe,
+        seed=seed,
     )
-
-    return CCPSOEnv(
+    env = CCPSOEnv(
         swarm=swarm,
-        conv_min=CONV_MIN,
-        conv_max=CONV_MAX,
-        optimum=objective.optimum,
-        function_id=function_id,
-        stage_fe=STAGE_FE,
-        stage_action_mode=STAGE_ACTION_MODE,
-        stage_smoothing_alpha=STAGE_SMOOTHING_ALPHA,
-        stage_max_delta_c=STAGE_MAX_DELTA_C,
+        c_min=c_min,
+        c_max=c_max,
+        optimum=problem.optimum,
+        function_id=problem.problem_id,
+        recent_window=recent_window,
+        stagnation_horizon=stagnation_horizon,
     )
-
-
-def make_cec2013_f1_env():
-    return make_cec2013_env(1)
-
-
-def make_small_ccpso_env():
-    """Backward-compatible name for the configured small F1 environment."""
-    return make_cec2013_f1_env()
+    env.problem = problem
+    return env
