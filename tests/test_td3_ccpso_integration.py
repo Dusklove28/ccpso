@@ -22,6 +22,7 @@ def sphere(positions):
 
 
 class TestTD3CCPSOIntegration(unittest.TestCase):
+
     def test_three_episode_single_step_td3_loop_on_cpu(self):
         python_seed = 101
         numpy_seed = 202
@@ -34,6 +35,7 @@ class TestTD3CCPSOIntegration(unittest.TestCase):
         torch.manual_seed(torch_seed)
 
         cpu_device = torch.device("cpu")
+        # 初始化群体智能算法
         swarm = CCPSOSwarm(
             particles=4,
             dimensions=3,
@@ -43,18 +45,21 @@ class TestTD3CCPSOIntegration(unittest.TestCase):
             max_fe=16,
             seed=environment_seed,
         )
+        # 初始化Env
         env = CCPSOEnv(
             swarm=swarm,
             c_min=0.0,
             c_max=1.5,
             optimum=0.0,
         )
+        # 初始化TD3算法
         policy = TD3(
             state_dim=6,
             action_dim=1,
             max_action=1.0,
             device=cpu_device,
         )
+        # 初始化经验回池子
         replay_buffer = ReplayBuffer(
             state_dim=6,
             action_dim=1,
