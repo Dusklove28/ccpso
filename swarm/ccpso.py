@@ -54,7 +54,24 @@ class CCPSOSwarm(BaseSwarm):
         self.c2_r2 = self.c2 * r2
         self.c_sum = self.c1_r1 + self.c2_r2
         # 3. 计算榜样项Q
-        self.q_positions = (self.c1_r1 * self.pbest_positions + self.c2_r2 * self.gbest_position) / (self.c_sum + 1e-16)
+        weighted_sum = (
+            self.c1_r1 * self.pbest_positions
+            + self.c2_r2 * self.gbest_position
+        )
+        fallback_q = (self.pbest_positions + self.gbest_position) / 2.0
+        near_zero = np.isclose(
+            self.c_sum,
+            0.0,
+            rtol=0.0,
+            atol=np.finfo(np.float64).eps,
+        )
+        self.q_positions = fallback_q.copy()
+        np.divide(
+            weighted_sum,
+            self.c_sum,
+            out=self.q_positions,
+            where=~near_zero,
+        )
 
         self.generation_prepared = True
 
