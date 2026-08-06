@@ -10,6 +10,7 @@ from problems.cec2017 import (
     make_cec2017_problem,
     public_to_source_function_id,
 )
+from problems.metadata import serialize_problem
 from problems.spec import ProblemSpec
 
 
@@ -25,4 +26,5 @@ __all__ = [
     "cec2017_category",
     "cec2017_max_fe",
     "make_cec2017_problem",
+    "serialize_problem",
 ]

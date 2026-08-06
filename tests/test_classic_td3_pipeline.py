@@ -140,6 +140,26 @@ class TestClassicTD3Pipeline(unittest.TestCase):
                 paths["checkpoint"],
                 load_optimizers=False,
             )
+            stored_problem = json.loads(
+                Path(paths["problem"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                stored_problem,
+                {
+                    "suite": "classic",
+                    "problem_id": "sphere",
+                    "name": "Sphere",
+                    "dimensions": 3,
+                    "lower_bound": [-100.0] * 3,
+                    "upper_bound": [100.0] * 3,
+                    "optimum": 0.0,
+                },
+            )
+            self.assertEqual(
+                checkpoint_metadata["problem"],
+                stored_problem,
+            )
+            self.assertEqual(evaluation["problem"], stored_problem)
             probe = summary["actor_probe"]
             np.testing.assert_array_equal(
                 restored_policy.select_action(

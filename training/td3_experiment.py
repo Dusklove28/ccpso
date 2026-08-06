@@ -9,6 +9,7 @@ from agents.td3.td3 import TD3
 from environments.ccpso_env import REWARD_MODES
 from environments.factory import make_ccpso_env
 from problems.classic import make_classic_problem
+from problems.metadata import serialize_problem
 from training.td3_online import TD3OnlineConfig, train_online
 
 
@@ -203,18 +204,6 @@ def _serialize_config(config, resolved_device):
     }
 
 
-def _serialize_problem(problem):
-    return {
-        "suite": problem.suite,
-        "problem_id": problem.problem_id,
-        "name": problem.name,
-        "dimensions": int(problem.dimensions),
-        "lower_bound": problem.lower_bound.tolist(),
-        "upper_bound": problem.upper_bound.tolist(),
-        "optimum": float(problem.optimum),
-    }
-
-
 def run_classic_td3(config):
     if not isinstance(config, ClassicTD3ExperimentConfig):
         raise TypeError(
@@ -277,6 +266,6 @@ def run_classic_td3(config):
         replay_buffer=replay_buffer,
         problem=problem,
         config=_serialize_config(config, resolved_device),
-        problem_metadata=_serialize_problem(problem),
+        problem_metadata=serialize_problem(problem),
         training_records=training_records,
     )

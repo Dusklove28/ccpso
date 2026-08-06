@@ -19,6 +19,8 @@ from training.td3_experiment import (
 )
 from training.td3_online import TD3OnlineConfig
 from environments.factory import make_ccpso_env as real_make_ccpso_env
+from problems import serialize_problem
+import training.td3_experiment as td3_experiment_module
 
 
 class TestClassicTD3Experiment(unittest.TestCase):
@@ -73,12 +75,18 @@ class TestClassicTD3Experiment(unittest.TestCase):
         self.assertEqual(result.config["td3"]["discount"], 0.99)
 
         metadata = result.problem_metadata
-        self.assertEqual(metadata["suite"], "classic")
-        self.assertEqual(metadata["problem_id"], "sphere")
-        self.assertEqual(metadata["dimensions"], 3)
-        self.assertEqual(metadata["lower_bound"], [-100.0] * 3)
-        self.assertEqual(metadata["upper_bound"], [100.0] * 3)
-        self.assertEqual(metadata["optimum"], 0.0)
+        self.assertEqual(
+            metadata,
+            {
+                "suite": "classic",
+                "problem_id": "sphere",
+                "name": "Sphere",
+                "dimensions": 3,
+                "lower_bound": [-100.0] * 3,
+                "upper_bound": [100.0] * 3,
+                "optimum": 0.0,
+            },
+        )
 
         records = result.training_records
         self.assertEqual(records["total_steps"], 6)
@@ -136,6 +144,10 @@ class TestClassicTD3Experiment(unittest.TestCase):
         self.assertIsInstance(serialized, str)
 
     def test_complete_training_and_cpu_determinism(self):
+        self.assertIs(
+            td3_experiment_module.serialize_problem,
+            serialize_problem,
+        )
         config = self.make_config()
 
         first_result = run_classic_td3(config)

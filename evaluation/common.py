@@ -4,6 +4,8 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from problems.metadata import serialize_problem
+
 
 STATE_FIELDS = (
     "state_fe_progress",
@@ -45,18 +47,3 @@ def validate_evaluation_seeds(seeds):
             )
         validated.append(int(seed))
     return validated
-
-
-def serialize_problem(problem):
-    problem_id = problem.problem_id
-    if isinstance(problem_id, np.generic):
-        problem_id = problem_id.item()
-    return {
-        "suite": problem.suite,
-        "problem_id": problem_id,
-        "name": problem.name,
-        "dimensions": int(problem.dimensions),
-        "lower_bound": problem.lower_bound.tolist(),
-        "upper_bound": problem.upper_bound.tolist(),
-        "optimum": float(problem.optimum),
-    }
