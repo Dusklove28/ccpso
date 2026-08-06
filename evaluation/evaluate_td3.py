@@ -67,10 +67,16 @@ def evaluate_td3_policy(
 
         try:
             state, reset_info = env.reset(seed=seed)
+            initial_fe = int(env.swarm.fe_count)
+            initial_best = float(env.swarm.gbest_fitness)
+            initial_gap = float(
+                max(initial_best - problem.optimum, 0.0)
+            )
             terminated = False
             truncated = False
 
             while not (terminated or truncated):
+                decision_fe = int(env.swarm.fe_count)
                 action_state = np.asarray(
                     state,
                     dtype=np.float32,
@@ -110,6 +116,7 @@ def evaluate_td3_policy(
                     {
                         "seed": int(seed),
                         "episode_step": int(episode_step),
+                        "decision_fe": int(decision_fe),
                         "fe_count": int(info["fe_count"]),
                         "gbest_fitness": float(
                             info["gbest_fitness"]
@@ -150,6 +157,9 @@ def evaluate_td3_policy(
                         )
                     ),
                     "steps": int(episode_step),
+                    "initial_fe": initial_fe,
+                    "initial_best": initial_best,
+                    "initial_gap": initial_gap,
                     "final_fe": int(env.swarm.fe_count),
                     "return": float(episode_return),
                     "reward_mode": reset_info["reward_mode"],

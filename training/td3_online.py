@@ -58,6 +58,12 @@ def train_online(env, policy, replay_buffer, config):
       in the current episode and restarts from one after each reset.
     - ``global_step`` is the cumulative number of ``env.step()`` calls made
       within this invocation of ``train_online()``.
+    - ``decision_fe`` is the number of function evaluations already consumed
+      in the current episode immediately before the recorded action.
+    - ``fe_count`` is the current episode's function-evaluation count after
+      that action has been executed.
+    - ``cumulative_training_fe`` is the total training evaluation cost across
+      episodes, including every reset's initial-population evaluation.
     - ``total_it`` is TD3's cumulative number of gradient updates.
 
     One ``global_step`` equals one ``env.step()``, one complete swarm update,
@@ -78,12 +84,15 @@ def train_online(env, policy, replay_buffer, config):
     step_results = []
     update_results = []
     total_steps = 0
+    cumulative_training_fe = 0
     warmup_steps = 0
     actor_steps = 0
 
     for episode_index in range(config.episodes):
         episode_seed = config.seed + episode_index
         state, reset_info = env.reset(seed=episode_seed)
+        reset_fe = int(env.swarm.fe_count)
+        cumulative_training_fe += reset_fe
         episode_return = 0.0
         episode_steps = 0
         c_values = []
@@ -91,6 +100,7 @@ def train_online(env, policy, replay_buffer, config):
         truncated = False
 
         while not (terminated or truncated):
+            decision_fe = int(env.swarm.fe_count)
             action_state = np.asarray(
                 state,
                 dtype=np.float32,
@@ -133,6 +143,8 @@ def train_online(env, policy, replay_buffer, config):
                 truncated,
                 info,
             ) = env.step(action)
+            post_step_fe = int(info["fe_count"])
+            cumulative_training_fe += post_step_fe - decision_fe
 
             replay_buffer.add(
                 state=state,
@@ -153,11 +165,15 @@ def train_online(env, policy, replay_buffer, config):
                     "episode_seed": int(episode_seed),
                     "global_step": int(total_steps),
                     "episode_step": int(episode_steps),
+                    "decision_fe": int(decision_fe),
+                    "cumulative_training_fe": int(
+                        cumulative_training_fe
+                    ),
                     "action_source": action_source,
                     "reward": float(reward),
                     "reward_progress": float(info["reward_progress"]),
                     "episode_return": float(episode_return),
-                    "fe_count": int(info["fe_count"]),
+                    "fe_count": post_step_fe,
                     "gbest_fitness": float(info["gbest_fitness"]),
                     "gap": float(info["gap"]),
                     "raw_action": float(info["raw_action"]),
@@ -193,6 +209,9 @@ def train_online(env, policy, replay_buffer, config):
                             "global_step": int(total_steps),
                             "episode_index": int(episode_index),
                             "episode_step": int(episode_steps),
+                            "cumulative_training_fe": int(
+                                cumulative_training_fe
+                            ),
                             **metrics,
                         }
                     )
@@ -212,6 +231,9 @@ def train_online(env, policy, replay_buffer, config):
                     reset_info["initial_gap_scale"]
                 ),
                 "final_fe": int(env.swarm.fe_count),
+                "cumulative_training_fe": int(
+                    cumulative_training_fe
+                ),
                 "final_best": float(env.swarm.gbest_fitness),
                 "terminated": bool(terminated),
                 "truncated": bool(truncated),

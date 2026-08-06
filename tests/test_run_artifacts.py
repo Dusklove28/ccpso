@@ -163,6 +163,9 @@ class TestRunArtifacts(unittest.TestCase):
                 records["updates"],
             )
             self.assertIn("reward_progress", STEP_COLUMNS)
+            self.assertIn("decision_fe", STEP_COLUMNS)
+            self.assertIn("cumulative_training_fe", STEP_COLUMNS)
+            self.assertIn("cumulative_training_fe", UPDATE_COLUMNS)
             self.assertIn("reward_mode", EPISODE_COLUMNS)
             self.assertIn("initial_improvement_scale", EPISODE_COLUMNS)
             self.assertIn("initial_gap_scale", EPISODE_COLUMNS)

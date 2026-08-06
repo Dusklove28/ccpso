@@ -7,12 +7,22 @@ from environments.reward_functions import (
     linear_improvement_reward,
     log_gap_reduction_reward,
 )
+from environments.state_features import (
+    build_relative_log_state,
+    mean_radial_diversity,
+    safe_initial_spatial_scale,
+)
 
 
 REWARD_MODES = (
     "step_log_improvement",
     "linear_improvement",
     "oracle_log_gap_reduction",
+)
+
+STATE_MODES = (
+    "legacy_v1",
+    "relative_log_v2",
 )
 
 
@@ -60,6 +70,7 @@ class CCPSOEnv(gym.Env):
             movement_log_floor: float = 1e-8,
             reward_mode: str = "step_log_improvement",
             reward_epsilon: float = 1e-12,
+            state_mode: str = "legacy_v1",
     ):
         super().__init__()
 
@@ -141,6 +152,18 @@ class CCPSOEnv(gym.Env):
                 f"{reward_epsilon!r}"
             )
 
+        if not isinstance(state_mode, str):
+            raise ValueError(
+                "state_mode 必须是字符串，实际值为 "
+                f"{state_mode!r}"
+            )
+        if state_mode not in STATE_MODES:
+            raise ValueError(
+                f"state_mode 必须是 {STATE_MODES} 之一，"
+                f"实际值为 {state_mode!r}"
+            )
+        self.state_mode = state_mode
+
         self.recent_window = require_integer(
             "recent_window",
             recent_window,
@@ -201,6 +224,9 @@ class CCPSOEnv(gym.Env):
         self.initial_fitness_scale = 1.0
         self.initial_improvement_scale = 1.0
         self.initial_gap_scale = 1.0
+        self.initial_position_scale = 1.0
+        self.initial_q_scale = 1.0
+        self.max_episode_updates = 1
 
     def _action_to_conv(self, action):
         action = np.asarray(
@@ -259,7 +285,7 @@ class CCPSOEnv(gym.Env):
             reward_progress=0.0,
             terminal=False,
     ):
-        return {
+        info = {
             "fe_count": int(self.swarm.fe_count),
             "gbest_fitness": float(self.swarm.gbest_fitness),
             "gap": max(
@@ -286,6 +312,20 @@ class CCPSOEnv(gym.Env):
             "stagnation_steps": int(self.stagnation_steps),
             "terminal": bool(terminal),
         }
+        if self.state_mode == "relative_log_v2":
+            info.update(
+                {
+                    "state_mode": self.state_mode,
+                    "initial_position_scale": float(
+                        self.initial_position_scale
+                    ),
+                    "initial_q_scale": float(self.initial_q_scale),
+                    "max_episode_updates": int(
+                        self.max_episode_updates
+                    ),
+                }
+            )
+        return info
 
     # 计算提升归一化的分母
     def _calculate_initial_fitness_scale(self) -> float:
@@ -345,6 +385,21 @@ class CCPSOEnv(gym.Env):
         )
 
     # 停滞判断
+    def _calculate_recent_improvement(self) -> float:
+        """Return the non-negative improvement over one complete W window."""
+        if len(self.best_history) < self.recent_window + 1:
+            return 0.0
+        old_best = float(self.best_history[-1 - self.recent_window])
+        new_best = float(self.best_history[-1])
+        with np.errstate(over="ignore", invalid="ignore"):
+            improvement = float(np.subtract(old_best, new_best))
+        if not np.isfinite(improvement):
+            raise FloatingPointError(
+                "recent improvement 必须是有限值，实际值为 "
+                f"{improvement!r}"
+            )
+        return float(max(improvement, 0.0))
+
     def _is_meaningful_improvement(
         self,
         old_best: float,
@@ -517,17 +572,31 @@ class CCPSOEnv(gym.Env):
             1.0,
         )
 
-        observation = np.asarray(
-            [
-                fe_progress,
-                recent_progress,
-                position_diversity,
-                q_diversity,
-                movement_state,
-                stagnation_ratio,
-            ],
-            dtype=np.float32,
-        )
+        if self.state_mode == "legacy_v1":
+            observation = np.asarray(
+                [
+                    fe_progress,
+                    recent_progress,
+                    position_diversity,
+                    q_diversity,
+                    movement_state,
+                    stagnation_ratio,
+                ],
+                dtype=np.float32,
+            )
+        else:
+            observation = build_relative_log_state(
+                fe_progress=fe_progress,
+                recent_improvement=self._calculate_recent_improvement(),
+                initial_improvement_scale=self.initial_improvement_scale,
+                position_diversity=mean_position_distance,
+                initial_position_scale=self.initial_position_scale,
+                q_diversity=mean_q_distance,
+                initial_q_scale=self.initial_q_scale,
+                movement=self.mean_movement,
+                stagnation_steps=self.stagnation_steps,
+                max_episode_updates=self.max_episode_updates,
+            )
 
         if not np.all(np.isfinite(observation)):
             raise FloatingPointError(
@@ -643,6 +712,29 @@ class CCPSOEnv(gym.Env):
 
         # Actor 观察状态前，必须先准备本代 Q
         self._prepare_generation()
+
+        remaining_fe = int(self.swarm.max_fe - self.swarm.fe_count)
+        self.max_episode_updates = max(
+            remaining_fe // int(self.swarm.particles),
+            1,
+        )
+        if self.state_mode == "relative_log_v2":
+            search_diagonal = float(
+                np.linalg.norm(
+                    self.swarm.upper_bound - self.swarm.lower_bound
+                )
+            )
+            self.initial_position_scale = safe_initial_spatial_scale(
+                mean_radial_diversity(self.swarm.positions),
+                search_diagonal,
+            )
+            self.initial_q_scale = safe_initial_spatial_scale(
+                mean_radial_diversity(self.swarm.q_positions),
+                search_diagonal,
+            )
+        else:
+            self.initial_position_scale = 1.0
+            self.initial_q_scale = 1.0
 
         observation = self._get_observation()
         info = self._get_info()

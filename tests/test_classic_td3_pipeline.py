@@ -98,6 +98,7 @@ class TestClassicTD3Pipeline(unittest.TestCase):
                 "rewards": "rewards.png",
                 "states": "states.png",
                 "td3_losses": "td3_losses.png",
+                "training_summary": "training_summary.png",
             }
             self.assertEqual(set(paths["figures"]), set(expected_figures))
             for name, filename in expected_figures.items():
@@ -209,7 +210,7 @@ class TestClassicTD3Pipeline(unittest.TestCase):
             )
             self.assertEqual(
                 hashlib.sha256(text_artifacts).hexdigest(),
-                "7479f90ba2a5c5e05890f180db6c05d0dba6295368b94aff79ea77403cc62ee9",
+                "6806dee6786099b768fad6f026243d6a9e0530eb35e87616191c2de5ae9bfbae",
             )
             self.assertEqual(
                 hashlib.sha256(

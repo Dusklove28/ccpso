@@ -38,6 +38,7 @@ PNG_NAMES = {
     "rewards.png",
     "states.png",
     "td3_losses.png",
+    "training_summary.png",
 }
 
 

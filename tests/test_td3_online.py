@@ -211,6 +211,10 @@ class TestTD3OnlineTraining(unittest.TestCase):
                 [step["fe_count"] for step in episode_steps],
                 [8, 12, 16],
             )
+            self.assertEqual(
+                [step["decision_fe"] for step in episode_steps],
+                [4, 8, 12],
+            )
             cumulative_return = 0.0
             for step in episode_steps:
                 cumulative_return += step["reward"]
@@ -240,6 +244,22 @@ class TestTD3OnlineTraining(unittest.TestCase):
                 self.assertTrue(np.isfinite(step[field]), msg=field)
                 self.assertGreaterEqual(step[field], 0.0, msg=field)
                 self.assertLessEqual(step[field], 1.0, msg=field)
+
+        self.assertEqual(
+            [step["cumulative_training_fe"] for step in steps],
+            [8, 12, 16, 24, 28, 32, 40, 44, 48],
+        )
+        self.assertEqual(
+            [
+                episode["cumulative_training_fe"]
+                for episode in result["episodes"]
+            ],
+            [16, 32, 48],
+        )
+        self.assertEqual(
+            [update["cumulative_training_fe"] for update in result["updates"]],
+            [40, 44, 48],
+        )
 
         update_contexts = [
             (

@@ -175,7 +175,7 @@ class TestClassicTD3Experiment(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(records_bytes).hexdigest(),
-            "86c31ed683dbdeb3363fe9840e02ba84c11739333977bfb2595beef69992f80b",
+            "c149b325c81fafb09f7b7958c92c879d5715add11ed75caf1b3e0494156586b6",
         )
         self.assertEqual(
             hashlib.sha256(actor_bytes).hexdigest(),

@@ -209,6 +209,15 @@ class TestTD3Evaluation(unittest.TestCase):
                 [step["fe_count"] for step in seed_steps],
                 [8, 12, 16],
             )
+            self.assertEqual(
+                [step["decision_fe"] for step in seed_steps],
+                [4, 8, 12],
+            )
+
+        for episode in first["episodes"]:
+            self.assertEqual(episode["initial_fe"], 4)
+            self.assertTrue(np.isfinite(episode["initial_best"]))
+            self.assertGreaterEqual(episode["initial_gap"], 0.0)
 
         for step in first["steps"]:
             action_state = np.array(
