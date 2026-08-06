@@ -13,6 +13,8 @@ def make_ccpso_env(
         c_max: float = 1.5,
         recent_window: int = 5,
         stagnation_horizon: int = 10,
+        reward_mode: str = "step_log_improvement",
+        reward_epsilon: float = 1e-12,
 ):
     if not isinstance(problem, ProblemSpec):
         raise TypeError(
@@ -36,6 +38,8 @@ def make_ccpso_env(
         function_id=problem.problem_id,
         recent_window=recent_window,
         stagnation_horizon=stagnation_horizon,
+        reward_mode=reward_mode,
+        reward_epsilon=reward_epsilon,
     )
     env.problem = problem
     return env

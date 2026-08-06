@@ -141,6 +141,29 @@ class TestProblemEnvFactory(unittest.TestCase):
         self.assertEqual(env.function_id, 7)
         self.assertEqual(info["function_id"], 7)
 
+    def test_reward_mode_and_epsilon_are_forwarded(self):
+        problem = make_classic_problem("sphere", dimensions=3)
+
+        env = make_ccpso_env(
+            problem,
+            particles=4,
+            max_fe=16,
+            seed=123,
+            reward_mode="oracle_log_gap_reduction",
+            reward_epsilon=1e-8,
+        )
+        _, info = env.reset(seed=123)
+
+        self.assertEqual(
+            env.reward_mode,
+            "oracle_log_gap_reduction",
+        )
+        self.assertEqual(env.reward_epsilon, 1e-8)
+        self.assertEqual(
+            info["reward_mode"],
+            "oracle_log_gap_reduction",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

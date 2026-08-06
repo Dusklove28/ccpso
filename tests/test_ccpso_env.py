@@ -258,6 +258,23 @@ class TestCCPSOEnvLifecycle(unittest.TestCase):
         self.assertGreaterEqual(reward, 0.0)
         self.assertLessEqual(reward, 5.0)
 
+    def test_default_reward_clipping_and_nonnegative_behavior_are_unchanged(self):
+        self.env.initial_fitness_scale = 1.0
+
+        clipped_reward, unclipped_progress = self.env._calculate_reward(
+            1e6,
+            0.0,
+        )
+        degraded_reward, degraded_progress = self.env._calculate_reward(
+            1.0,
+            2.0,
+        )
+
+        self.assertEqual(clipped_reward, 5.0)
+        self.assertGreater(unclipped_progress, 5.0)
+        self.assertEqual(degraded_reward, 0.0)
+        self.assertEqual(degraded_progress, 0.0)
+
     def test_recent_progress_requires_complete_window(self):
         self.env.recent_window = 3
         self.env.initial_fitness_scale = 2.0

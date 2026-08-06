@@ -1,5 +1,19 @@
 import gymnasium as gym
 import numpy as np
+from numbers import Real
+
+from environments.reward_functions import (
+    calculate_initial_improvement_scale,
+    linear_improvement_reward,
+    log_gap_reduction_reward,
+)
+
+
+REWARD_MODES = (
+    "step_log_improvement",
+    "linear_improvement",
+    "oracle_log_gap_reduction",
+)
 
 
 # 计算移动程度，对数
@@ -44,6 +58,8 @@ class CCPSOEnv(gym.Env):
             stagnation_abs_tol: float = 1e-12,
             stagnation_rel_tol: float = 1e-12,
             movement_log_floor: float = 1e-8,
+            reward_mode: str = "step_log_improvement",
+            reward_epsilon: float = 1e-12,
     ):
         super().__init__()
 
@@ -71,6 +87,26 @@ class CCPSOEnv(gym.Env):
                 )
             return int(value)
 
+        def require_finite_real(name, value):
+            if (
+                isinstance(value, (bool, np.bool_))
+                or not isinstance(value, Real)
+            ):
+                raise ValueError(
+                    f"{name} 必须是有限实数，实际值为 {value!r}"
+                )
+            try:
+                value = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(
+                    f"{name} 必须是有限实数，实际值为 {value!r}"
+                ) from exc
+            if not np.isfinite(value):
+                raise ValueError(
+                    f"{name} 必须是有限实数，实际值为 {value!r}"
+                )
+            return value
+
         self.swarm = swarm
         # C 的动作范围
         self.c_min = require_finite_float("c_min", c_min)
@@ -81,8 +117,29 @@ class CCPSOEnv(gym.Env):
                 f"c_min={c_min!r}, c_max={c_max!r}"
             )
         # optimum 不进入状态，本版本仅用于最终误差日志
-        self.optimum = float(optimum)
+        self.optimum = require_finite_real("optimum", optimum)
         self.function_id = function_id
+
+        if not isinstance(reward_mode, str):
+            raise ValueError(
+                "reward_mode 必须是字符串，实际值为 "
+                f"{reward_mode!r}"
+            )
+        if reward_mode not in REWARD_MODES:
+            raise ValueError(
+                f"reward_mode 必须是 {REWARD_MODES} 之一，"
+                f"实际值为 {reward_mode!r}"
+            )
+        self.reward_mode = reward_mode
+        self.reward_epsilon = require_finite_real(
+            "reward_epsilon",
+            reward_epsilon,
+        )
+        if self.reward_epsilon <= 0.0:
+            raise ValueError(
+                "reward_epsilon 必须大于 0，实际值为 "
+                f"{reward_epsilon!r}"
+            )
 
         self.recent_window = require_integer(
             "recent_window",
@@ -142,6 +199,8 @@ class CCPSOEnv(gym.Env):
         # 用初始种群适应度分布构造固定尺度
         # 不依赖理论最优值，同时消除 CEC 函数平移常数的影响
         self.initial_fitness_scale = 1.0
+        self.initial_improvement_scale = 1.0
+        self.initial_gap_scale = 1.0
 
     def _action_to_conv(self, action):
         action = np.asarray(
@@ -214,6 +273,11 @@ class CCPSOEnv(gym.Env):
                 else float(raw_action)
             ),
             "reward_progress": float(reward_progress),
+            "reward_mode": self.reward_mode,
+            "initial_improvement_scale": float(
+                self.initial_improvement_scale
+            ),
+            "initial_gap_scale": float(self.initial_gap_scale),
             "boundary_clip_ratio": float(
                 self.swarm.boundary_clip_ratio
             ),
@@ -237,6 +301,17 @@ class CCPSOEnv(gym.Env):
             initial_median - initial_best,
             1e-12,
         )
+
+    def _calculate_initial_gap_scale(self) -> float:
+        initial_best = float(self.swarm.gbest_fitness)
+        with np.errstate(over="ignore", invalid="ignore"):
+            initial_gap = float(np.subtract(initial_best, self.optimum))
+        if not np.isfinite(initial_gap):
+            raise FloatingPointError(
+                "initial gbest - optimum 必须是有限值，实际值为 "
+                f"{initial_gap!r}"
+            )
+        return float(max(initial_gap, 0.0, 1e-12))
 
     # 计算最近提升
     def _calculate_recent_progress(self) -> float:
@@ -476,47 +551,65 @@ class CCPSOEnv(gym.Env):
                 后续研究多步信用传播时，只修改 TD target，
                 暂时不混入多样性奖励或阶段奖励。
                 """
-        def require_finite(name, value):
-            value = float(value)
-            if not np.isfinite(value):
-                raise FloatingPointError(
-                    f"{name} 必须是有限值，实际值为 {value!r}"
-                )
-            return value
+        if self.reward_mode == "step_log_improvement":
+            def require_finite(name, value):
+                value = float(value)
+                if not np.isfinite(value):
+                    raise FloatingPointError(
+                        f"{name} 必须是有限值，实际值为 {value!r}"
+                    )
+                return value
 
-        old_best = require_finite("old_best", old_best)
-        new_best = require_finite("new_best", new_best)
-        initial_fitness_scale = require_finite(
-            "initial_fitness_scale",
-            self.initial_fitness_scale,
+            old_best = require_finite("old_best", old_best)
+            new_best = require_finite("new_best", new_best)
+            initial_fitness_scale = require_finite(
+                "initial_fitness_scale",
+                self.initial_fitness_scale,
+            )
+
+            improvement = require_finite(
+                "improvement",
+                old_best - new_best,
+            )
+            improvement = max(improvement, 0.0)
+
+            scaled_improvement = require_finite(
+                "scaled_improvement",
+                improvement / max(initial_fitness_scale, 1e-12),
+            )
+
+            progress = require_finite(
+                "progress",
+                np.log1p(scaled_improvement),
+            )
+
+            reward = require_finite(
+                "reward",
+                np.clip(
+                    progress,
+                    0.0,
+                    5.0,
+                ),
+            )
+
+            return reward, progress
+
+        if self.reward_mode == "linear_improvement":
+            reward = linear_improvement_reward(
+                old_best,
+                new_best,
+                self.initial_improvement_scale,
+            )
+            return reward, reward
+
+        reward = log_gap_reduction_reward(
+            old_best,
+            new_best,
+            self.optimum,
+            self.initial_gap_scale,
+            epsilon=self.reward_epsilon,
         )
-
-        improvement = require_finite(
-            "improvement",
-            old_best - new_best,
-        )
-        improvement = max(improvement, 0.0)
-
-        scaled_improvement = require_finite(
-            "scaled_improvement",
-            improvement / max(initial_fitness_scale, 1e-12),
-        )
-
-        progress = require_finite(
-            "progress",
-            np.log1p(scaled_improvement),
-        )
-
-        reward = require_finite(
-            "reward",
-            np.clip(
-                progress,
-                0.0,
-                5.0,
-            ),
-        )
-
-        return reward, progress
+        return reward, reward
 
     # Gymnasium 接口
     def reset(self, *, seed=None, options=None):
@@ -531,6 +624,14 @@ class CCPSOEnv(gym.Env):
         self.initial_fitness_scale = (
             self._calculate_initial_fitness_scale()
         )
+        initial_fitness = np.asarray(
+            self.swarm.fitness,
+            dtype=np.float64,
+        )
+        self.initial_improvement_scale = (
+            calculate_initial_improvement_scale(initial_fitness)
+        )
+        self.initial_gap_scale = self._calculate_initial_gap_scale()
 
         self.mean_movement = 0.0
         self.recent_progress = 0.0
