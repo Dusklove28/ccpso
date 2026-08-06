@@ -202,6 +202,113 @@ class TestStepUsesInstanceWeight(unittest.TestCase):
             np.testing.assert_array_equal(swarm.positions, wrong_positions)
 
 
+class TestConvergenceControlledPositionDefinition(unittest.TestCase):
+    def _make_prepared_swarm(self):
+        swarm = CCPSOSwarm(
+            particles=2,
+            dimensions=3,
+            fun=sphere,
+            lower_bound=-1_000_000.0,
+            upper_bound=1_000_000.0,
+            max_fe=4,
+            seed=0,
+        )
+        swarm.reset()
+        swarm.w = 0.25
+        swarm.positions = np.array(
+            [[2.0, -1.0, 3.0], [-2.0, 4.0, 1.0]],
+            dtype=np.float64,
+        )
+        swarm.previous_positions = np.array(
+            [[1.0, -2.0, 2.0], [-3.0, 2.0, 0.0]],
+            dtype=np.float64,
+        )
+        swarm.pbest_positions = np.array(
+            [[0.5, -0.5, 1.0], [-1.0, 1.5, 0.25]],
+            dtype=np.float64,
+        )
+        swarm.gbest_position = np.array(
+            [0.25, -0.25, 0.5],
+            dtype=np.float64,
+        )
+        swarm.c1_r1 = np.array(
+            [[0.25, 0.5, 0.75], [0.125, 0.625, 0.375]],
+            dtype=np.float64,
+        )
+        swarm.c2_r2 = 1.0 - swarm.c1_r1
+        swarm.c_sum = swarm.c1_r1 + swarm.c2_r2
+        swarm.q_positions = (
+            swarm.c1_r1 * swarm.pbest_positions
+            + swarm.c2_r2 * swarm.gbest_position
+        ) / swarm.c_sum
+        swarm.generation_prepared = True
+        return swarm
+
+    @staticmethod
+    def _snapshot_and_calculate_p(swarm):
+        positions = swarm.positions.copy()
+        previous_positions = swarm.previous_positions.copy()
+        q_positions = swarm.q_positions.copy()
+        pbest_positions = swarm.pbest_positions.copy()
+        gbest_position = swarm.gbest_position.copy()
+        c1_r1 = swarm.c1_r1.copy()
+        c2_r2 = swarm.c2_r2.copy()
+        phi = c1_r1 + c2_r2
+        p = (
+            (1.0 + swarm.w - phi) * (positions - q_positions)
+            - swarm.w * (previous_positions - q_positions)
+        )
+        return {
+            "positions": positions,
+            "previous_positions": previous_positions,
+            "q_positions": q_positions,
+            "pbest_positions": pbest_positions,
+            "gbest_position": gbest_position,
+            "c1_r1": c1_r1,
+            "c2_r2": c2_r2,
+            "phi": phi,
+            "p": p,
+        }
+
+    def test_c_one_matches_expanded_classic_pso_second_order_formula(self):
+        swarm = self._make_prepared_swarm()
+        before = self._snapshot_and_calculate_p(swarm)
+        self.assertTrue(np.any(before["p"] != 0.0))
+
+        expected_positions = (
+            (1.0 + swarm.w - before["phi"]) * before["positions"]
+            - swarm.w * before["previous_positions"]
+            + before["c1_r1"] * before["pbest_positions"]
+            + before["c2_r2"] * before["gbest_position"]
+        )
+        self.assertTrue(
+            np.all(expected_positions > swarm.lower_bound)
+            and np.all(expected_positions < swarm.upper_bound)
+        )
+
+        swarm.step(conv=1.0)
+
+        np.testing.assert_array_equal(swarm.positions, expected_positions)
+        self.assertEqual(swarm.boundary_clip_ratio, 0.0)
+
+    def test_c_zero_places_particles_exactly_at_q(self):
+        swarm = self._make_prepared_swarm()
+        before = self._snapshot_and_calculate_p(swarm)
+        self.assertTrue(np.any(before["p"] != 0.0))
+        self.assertTrue(
+            np.all(before["q_positions"] > swarm.lower_bound)
+            and np.all(before["q_positions"] < swarm.upper_bound)
+        )
+
+        swarm.step(conv=0.0)
+
+        np.testing.assert_array_equal(
+            swarm.positions,
+            before["q_positions"],
+        )
+        self.assertEqual(swarm.boundary_clip_ratio, 0.0)
+
+
 class TestBoundaryClipRatio(unittest.TestCase):
     def _run_candidate_positions(self, candidate_positions):
         swarm = CCPSOSwarm(

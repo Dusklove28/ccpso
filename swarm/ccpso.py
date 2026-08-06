@@ -1,3 +1,11 @@
+"""收敛控制粒子群（CCPSO）的群体更新实现。
+
+当前方法将论文式（17）—（18）中的位置更新分解为榜样中心 ``Q`` 与
+二阶残差项 ``P``，再以外部给定的收敛控制系数 ``C`` 执行
+``X_next = clip(Q + C * P)``。这里的 ``C`` 缩放确定性残差项，并非
+高斯采样的标准差。
+"""
+
 from  swarm.base_swarm import BaseSwarm
 
 import numpy as np
@@ -6,10 +14,13 @@ W = 0.729844
 C1 = 1.496180
 C2 = 1.496180
 
-# 1.初始化种群位置、适应度、p/gbest、
-# 2.计算榜样项Q、扰动项P
-# 3.根据X=Q+P更新新粒子位置
 class CCPSOSwarm(BaseSwarm):
+    """实现 ``X_{t+1} = clip(Q_t + C_t P_t)`` 的 CCPSO 群体。
+
+    ``Q_t`` 是由个体最优与全局最优形成的逐坐标加权中心；``P_t``
+    是由当前位置、上一位置和 ``Q_t`` 构成的二阶残差项。环境传入的
+    ``conv`` 即研究定义中的 ``C_t``，用于缩放 ``P_t``。
+    """
 
     def __init__(self,
                  particles,
@@ -32,7 +43,7 @@ class CCPSOSwarm(BaseSwarm):
         self.generation_prepared = False
         self.boundary_clip_ratio = 0.0
 
-    # 在reset后，初始化算法特定变量
+    # reset 后清空当代 Q、随机权重与边界投影诊断。
     def _reset_algorithm_state(self):
         self.previous_positions = self.positions.copy()
 
@@ -43,7 +54,7 @@ class CCPSOSwarm(BaseSwarm):
         self.generation_prepared = False
         self.boundary_clip_ratio = 0.0
 
-    # 3. 计算榜样项Q
+    # 计算 Q_t 及 phi_t=c1*r1+c2*r2；权重按坐标独立采样。
     def _calculate_q(self):
 
 
@@ -53,7 +64,7 @@ class CCPSOSwarm(BaseSwarm):
         self.c1_r1 = self.c1 * r1
         self.c2_r2 = self.c2 * r2
         self.c_sum = self.c1_r1 + self.c2_r2
-        # 3. 计算榜样项Q
+        # 正常权重下严格计算 Q_t 的加权中心。
         weighted_sum = (
             self.c1_r1 * self.pbest_positions
             + self.c2_r2 * self.gbest_position
@@ -90,12 +101,12 @@ class CCPSOSwarm(BaseSwarm):
         a1 = 1 + self.w - self.c_sum
         a2 = -self.w
 
-        q=self.q_positions # 上一次迭代的Q，初始时会预先计算一次，以便Actor使用
+        q=self.q_positions # 本次转移使用的 Q_t；预先生成以供动作前状态使用。
         p = a1 * (self.positions - q) + a2 * (self.previous_positions - q)
-        # 4.根据二阶公式生成新位置
+        # 二阶残差 P_t 由 conv（即 C_t）缩放，形成未投影候选位置。
         candidate_positions = q + conv * p
 
-        # 5. 边界处理-位置，速度无需考虑
+        # 对 X_{t+1}=Q_t+C_t*P_t 做逐坐标边界投影。
         # implicit_vs = X - self.positions
         # implicit_vs = np.clip(implicit_vs, self.min_v, self.max_v)
         positions = np.clip(
