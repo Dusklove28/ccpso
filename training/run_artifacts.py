@@ -2,7 +2,10 @@ import csv
 import json
 from pathlib import Path
 
-from training.td3_experiment import ClassicTD3ExperimentResult
+from training.td3_experiment import (
+    ClassicTD3ExperimentResult,
+    TD3ProblemExperimentResult,
+)
 
 
 STEP_COLUMNS = (
@@ -106,7 +109,7 @@ def _make_summary(result):
     if not episodes:
         raise ValueError("training records contain no episodes")
 
-    return {
+    summary = {
         "suite": result.problem_metadata["suite"],
         "problem_id": result.problem_metadata["problem_id"],
         "problem_name": result.problem_metadata["name"],
@@ -123,12 +126,18 @@ def _make_summary(result):
             min(episode["final_best"] for episode in episodes)
         ),
     }
+    if "source_function_id" in result.problem_metadata:
+        summary["source_function_id"] = int(
+            result.problem_metadata["source_function_id"]
+        )
+        summary["category"] = result.problem_metadata["category"]
+    return summary
 
 
-def save_classic_td3_run(result, run_dir):
-    if not isinstance(result, ClassicTD3ExperimentResult):
+def save_td3_run(result, run_dir):
+    if not isinstance(result, TD3ProblemExperimentResult):
         raise TypeError(
-            "result must be an instance of ClassicTD3ExperimentResult"
+            "result must be an instance of TD3ProblemExperimentResult"
         )
 
     run_path = _prepare_run_directory(run_dir)
@@ -164,3 +173,11 @@ def save_classic_td3_run(result, run_dir):
         name: str(path)
         for name, path in paths.items()
     }
+
+
+def save_classic_td3_run(result, run_dir):
+    if not isinstance(result, ClassicTD3ExperimentResult):
+        raise TypeError(
+            "result must be an instance of ClassicTD3ExperimentResult"
+        )
+    return save_td3_run(result, run_dir)

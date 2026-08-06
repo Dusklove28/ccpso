@@ -1,4 +1,4 @@
-"""One-command classic-function TD3 experiment pipeline."""
+"""One-command TD3 pipeline for one public CEC2017 function."""
 
 import argparse
 import json
@@ -6,51 +6,37 @@ from pathlib import Path
 
 from environments.ccpso_env import REWARD_MODES
 from experiments.td3_pipeline import run_td3_pipeline
-from problems.classic import make_classic_problem
-from training.td3_experiment import (
-    ClassicTD3ExperimentConfig,
+from problems.cec2017 import (
+    CEC2017_FUNCTION_IDS,
+    CEC2017_SUPPORTED_DIMENSIONS,
+    make_cec2017_problem,
 )
+from training.td3_experiment import TD3ProblemExperimentConfig
 from training.td3_online import TD3OnlineConfig
-
-
-def run_classic_td3_pipeline(
-    config,
-    *,
-    output_root,
-    run_name,
-    evaluation_seeds,
-):
-    """Train, persist, evaluate, and plot one classic TD3 run."""
-    if not isinstance(config, ClassicTD3ExperimentConfig):
-        raise TypeError(
-            "config must be an instance of ClassicTD3ExperimentConfig"
-        )
-
-    problem = make_classic_problem(
-        config.problem_name,
-        dimensions=config.dimensions,
-    )
-    return run_td3_pipeline(
-        problem,
-        config,
-        output_root=output_root,
-        run_name=run_name,
-        evaluation_seeds=evaluation_seeds,
-    )
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Run one classic-function TD3-CCPSO experiment."
+        description=(
+            "Run one TD3-CCPSO experiment using the project's public "
+            "CEC2017 numbering F1..F29 (source F2 is excluded)."
+        )
     )
     parser.add_argument(
-        "--problem",
-        choices=("sphere", "rastrigin", "rosenbrock"),
-        default="sphere",
+        "--function-id",
+        type=int,
+        choices=CEC2017_FUNCTION_IDS,
+        required=True,
+        help="Project public function ID in 1..29, not a source ID.",
     )
-    parser.add_argument("--dimensions", type=int, default=10)
+    parser.add_argument(
+        "--dimensions",
+        type=int,
+        choices=CEC2017_SUPPORTED_DIMENSIONS,
+        default=10,
+    )
     parser.add_argument("--particles", type=int, default=20)
-    parser.add_argument("--max-fe", type=int, default=10_000)
+    parser.add_argument("--max-fe", type=int, required=True)
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--learning-starts", type=int, default=1_000)
     parser.add_argument("--batch-size", type=int, default=256)
@@ -85,6 +71,13 @@ def parse_args(argv=None):
     return build_parser().parse_args(argv)
 
 
+def problem_from_args(args):
+    return make_cec2017_problem(
+        args.function_id,
+        args.dimensions,
+    )
+
+
 def config_from_args(args):
     online = TD3OnlineConfig(
         episodes=args.episodes,
@@ -94,9 +87,7 @@ def config_from_args(args):
         updates_per_step=args.updates_per_step,
         seed=args.seed,
     )
-    return ClassicTD3ExperimentConfig(
-        problem_name=args.problem,
-        dimensions=args.dimensions,
+    return TD3ProblemExperimentConfig(
         particles=args.particles,
         max_fe=args.max_fe,
         buffer_capacity=args.buffer_capacity,
@@ -114,8 +105,10 @@ def config_from_args(args):
 
 def main(argv=None):
     args = parse_args(argv)
+    problem = problem_from_args(args)
     config = config_from_args(args)
-    pipeline_result = run_classic_td3_pipeline(
+    pipeline_result = run_td3_pipeline(
+        problem,
         config,
         output_root=args.output_root,
         run_name=args.run_name,

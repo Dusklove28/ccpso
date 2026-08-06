@@ -1,10 +1,12 @@
 import json
 import csv
 from dataclasses import replace
+import hashlib
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -19,6 +21,7 @@ from experiments.run_classic_td3 import (
     parse_args,
     run_classic_td3_pipeline,
 )
+from experiments.td3_pipeline import run_td3_pipeline
 from training.td3_experiment import ClassicTD3ExperimentConfig
 from training.td3_online import TD3OnlineConfig
 
@@ -52,12 +55,17 @@ class TestClassicTD3Pipeline(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(dir=PROJECT_ROOT) as temp_dir:
             output_root = Path(temp_dir) / "outputs"
-            pipeline = run_classic_td3_pipeline(
-                config,
-                output_root=output_root,
-                run_name="sphere-smoke",
-                evaluation_seeds=evaluation_seeds,
-            )
+            with patch(
+                "experiments.run_classic_td3.run_td3_pipeline",
+                wraps=run_td3_pipeline,
+            ) as common_pipeline:
+                pipeline = run_classic_td3_pipeline(
+                    config,
+                    output_root=output_root,
+                    run_name="sphere-smoke",
+                    evaluation_seeds=evaluation_seeds,
+                )
+            common_pipeline.assert_called_once()
 
             self.assertIsInstance(
                 json.dumps(pipeline, allow_nan=False),
@@ -181,6 +189,49 @@ class TestClassicTD3Pipeline(unittest.TestCase):
             self.assertEqual(
                 evaluation["environment"],
                 stored_config["environment"],
+            )
+
+            text_artifact_names = (
+                "config.json",
+                "problem.json",
+                "summary.json",
+                "steps.csv",
+                "episodes.csv",
+                "updates.csv",
+                "evaluation.json",
+            )
+            text_artifacts = b"".join(
+                name.encode("utf-8")
+                + b"\0"
+                + (run_dir / name).read_bytes()
+                + b"\0"
+                for name in text_artifact_names
+            )
+            self.assertEqual(
+                hashlib.sha256(text_artifacts).hexdigest(),
+                "7479f90ba2a5c5e05890f180db6c05d0dba6295368b94aff79ea77403cc62ee9",
+            )
+            self.assertEqual(
+                hashlib.sha256(
+                    json.dumps(
+                        pipeline["summary"],
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "c834b0caa497ad8fbfed55fb3a0b62b3649653a2c80381530670e24c9840bf57",
+            )
+            self.assertEqual(
+                hashlib.sha256(
+                    json.dumps(
+                        checkpoint_metadata,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "3b9c6e54a410d8e4b30ec10e192f0e89ce54001d20360c7f20179592c6b0ced6",
             )
 
             original_bytes = {

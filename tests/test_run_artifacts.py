@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,7 @@ from training.run_artifacts import (
     STEP_COLUMNS,
     UPDATE_COLUMNS,
     save_classic_td3_run,
+    save_td3_run,
 )
 from training.td3_experiment import (
     ClassicTD3ExperimentConfig,
@@ -69,7 +71,12 @@ class TestRunArtifacts(unittest.TestCase):
         ) as temporary_directory:
             run_dir = Path(temporary_directory) / "run"
 
-            paths = save_classic_td3_run(result, run_dir)
+            with patch(
+                "training.run_artifacts.save_td3_run",
+                wraps=save_td3_run,
+            ) as common_saver:
+                paths = save_classic_td3_run(result, run_dir)
+            common_saver.assert_called_once_with(result, run_dir)
 
             self.assertEqual(
                 set(paths),
