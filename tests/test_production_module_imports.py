@@ -10,6 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 SUPPORTED_PACKAGES = (
     "agents",
+    "baselines",
     "environments",
     "evaluation",
     "experiments",
