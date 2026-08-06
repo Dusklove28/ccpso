@@ -118,6 +118,11 @@ class TestRunArtifacts(unittest.TestCase):
             self.assertEqual(summary["problem_id"], "sphere")
             self.assertEqual(summary["problem_name"], "Sphere")
             self.assertEqual(summary["dimensions"], 3)
+            self.assertEqual(
+                summary["reward_mode"],
+                "step_log_improvement",
+            )
+            self.assertEqual(summary["discount"], 0.99)
             self.assertEqual(summary["episode_count"], 2)
             self.assertEqual(summary["total_steps"], 6)
             self.assertEqual(summary["total_updates"], 2)
@@ -150,6 +155,10 @@ class TestRunArtifacts(unittest.TestCase):
                 UPDATE_COLUMNS,
                 records["updates"],
             )
+            self.assertIn("reward_progress", STEP_COLUMNS)
+            self.assertIn("reward_mode", EPISODE_COLUMNS)
+            self.assertIn("initial_improvement_scale", EPISODE_COLUMNS)
+            self.assertIn("initial_gap_scale", EPISODE_COLUMNS)
 
     def test_zero_updates_keeps_complete_header(self):
         result = self.make_result(learning_starts=100)

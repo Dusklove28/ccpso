@@ -169,6 +169,17 @@ class TestTD3Evaluation(unittest.TestCase):
         self.assertEqual(first_call_count, 9)
         self.assertEqual(policy.select_action.call_count, 18)
         policy.train.assert_not_called()
+        self.assertEqual(
+            first["environment"],
+            {
+                "c_min": 0.0,
+                "c_max": 1.5,
+                "recent_window": 5,
+                "stagnation_horizon": 10,
+                "reward_mode": "step_log_improvement",
+                "reward_epsilon": 1e-12,
+            },
+        )
 
         for episode in first["episodes"]:
             self.assertIn(episode["seed"], seeds)
@@ -177,6 +188,12 @@ class TestTD3Evaluation(unittest.TestCase):
             self.assertTrue(np.isfinite(episode["final_best"]))
             self.assertGreaterEqual(episode["gap"], 0.0)
             self.assertTrue(np.isfinite(episode["return"]))
+            self.assertEqual(
+                episode["reward_mode"],
+                "step_log_improvement",
+            )
+            self.assertGreater(episode["initial_improvement_scale"], 0.0)
+            self.assertGreater(episode["initial_gap_scale"], 0.0)
             self.assertLessEqual(episode["c_min"], episode["c_mean"])
             self.assertLessEqual(episode["c_mean"], episode["c_max"])
 
@@ -210,6 +227,7 @@ class TestTD3Evaluation(unittest.TestCase):
                 places=7,
             )
             self.assertTrue(np.isfinite(step["reward"]))
+            self.assertTrue(np.isfinite(step["reward_progress"]))
             self.assertTrue(np.isfinite(step["gbest_fitness"]))
             self.assertGreaterEqual(step["gap"], 0.0)
 
@@ -234,6 +252,83 @@ class TestTD3Evaluation(unittest.TestCase):
             critic_optimizer_before,
         )
         self.assertEqual(policy.total_it, total_it_before)
+
+    def test_reward_modes_change_only_reward_diagnostics_in_evaluation(self):
+        torch.manual_seed(321)
+        policy = TD3(6, 1, 1.0, device="cpu")
+        problem = make_classic_problem("sphere", dimensions=3)
+        common = {
+            "particles": 4,
+            "max_fe": 16,
+            "seeds": [41],
+            "c_min": 0.2,
+            "c_max": 1.2,
+            "recent_window": 3,
+            "stagnation_horizon": 4,
+            "reward_epsilon": 1e-9,
+        }
+
+        default_result = evaluate_td3_policy(
+            policy,
+            problem,
+            reward_mode="step_log_improvement",
+            **common,
+        )
+        linear_result = evaluate_td3_policy(
+            policy,
+            problem,
+            reward_mode="linear_improvement",
+            **common,
+        )
+
+        invariant_step_fields = (
+            "seed",
+            "episode_step",
+            "fe_count",
+            "gbest_fitness",
+            "gap",
+            "raw_action",
+            "c_value",
+            *STATE_FIELDS,
+        )
+        for default_step, linear_step in zip(
+            default_result["steps"],
+            linear_result["steps"],
+        ):
+            for field in invariant_step_fields:
+                self.assertEqual(default_step[field], linear_step[field])
+
+        invariant_episode_fields = (
+            "seed",
+            "final_best",
+            "gap",
+            "steps",
+            "final_fe",
+            "c_mean",
+            "c_min",
+            "c_max",
+            "initial_improvement_scale",
+            "initial_gap_scale",
+        )
+        for field in invariant_episode_fields:
+            self.assertEqual(
+                default_result["episodes"][0][field],
+                linear_result["episodes"][0][field],
+            )
+        self.assertEqual(
+            default_result["environment"]["reward_mode"],
+            "step_log_improvement",
+        )
+        self.assertEqual(
+            linear_result["environment"]["reward_mode"],
+            "linear_improvement",
+        )
+        self.assertNotEqual(
+            [step["reward"] for step in default_result["steps"]],
+            [step["reward"] for step in linear_result["steps"]],
+        )
+        json.dumps(default_result, allow_nan=False)
+        json.dumps(linear_result, allow_nan=False)
 
     def test_optimum_changes_only_gap_metadata_and_logs(self):
         def sphere(positions):

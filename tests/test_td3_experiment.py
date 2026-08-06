@@ -1,7 +1,9 @@
 from pathlib import Path
+from dataclasses import replace
 import json
 import sys
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -16,6 +18,7 @@ from training.td3_experiment import (
     run_classic_td3,
 )
 from training.td3_online import TD3OnlineConfig
+from environments.factory import make_ccpso_env as real_make_ccpso_env
 
 
 class TestClassicTD3Experiment(unittest.TestCase):
@@ -56,6 +59,18 @@ class TestClassicTD3Experiment(unittest.TestCase):
         self.assertEqual(result.config["max_fe"], 16)
         self.assertEqual(result.config["buffer_capacity"], 16)
         self.assertEqual(result.config["online"]["episodes"], 2)
+        self.assertEqual(
+            result.config["environment"],
+            {
+                "c_min": 0.0,
+                "c_max": 1.5,
+                "recent_window": 5,
+                "stagnation_horizon": 10,
+                "reward_mode": "step_log_improvement",
+                "reward_epsilon": 1e-12,
+            },
+        )
+        self.assertEqual(result.config["td3"]["discount"], 0.99)
 
         metadata = result.problem_metadata
         self.assertEqual(metadata["suite"], "classic")
@@ -77,6 +92,14 @@ class TestClassicTD3Experiment(unittest.TestCase):
             self.assertEqual(episode["final_fe"], 16)
             self.assertIs(episode["terminated"], True)
             self.assertIs(episode["truncated"], False)
+            self.assertEqual(
+                episode["reward_mode"],
+                "step_log_improvement",
+            )
+            self.assertGreater(episode["initial_improvement_scale"], 0.0)
+            self.assertGreater(episode["initial_gap_scale"], 0.0)
+        for step in records["steps"]:
+            self.assertTrue(np.isfinite(step["reward_progress"]))
 
         terminal_masks = result.replay_buffer.bootstrap_mask[
             :len(result.replay_buffer),
@@ -133,6 +156,80 @@ class TestClassicTD3Experiment(unittest.TestCase):
             second_result.policy.actor.parameters(),
         ):
             self.assertTrue(torch.equal(expected, actual.detach()))
+
+    def test_environment_parameters_are_explicitly_forwarded(self):
+        config = replace(
+            self.make_config(),
+            c_min=0.2,
+            c_max=1.2,
+            recent_window=3,
+            stagnation_horizon=4,
+            reward_mode="linear_improvement",
+            reward_epsilon=1e-9,
+            discount=1.0,
+        )
+
+        with patch(
+            "training.td3_experiment.make_ccpso_env",
+            wraps=real_make_ccpso_env,
+        ) as factory:
+            result = run_classic_td3(config)
+
+        forwarded = factory.call_args.kwargs
+        self.assertEqual(forwarded["c_min"], 0.2)
+        self.assertEqual(forwarded["c_max"], 1.2)
+        self.assertEqual(forwarded["recent_window"], 3)
+        self.assertEqual(forwarded["stagnation_horizon"], 4)
+        self.assertEqual(forwarded["reward_mode"], "linear_improvement")
+        self.assertEqual(forwarded["reward_epsilon"], 1e-9)
+        self.assertEqual(
+            result.config["environment"],
+            {
+                "c_min": 0.2,
+                "c_max": 1.2,
+                "recent_window": 3,
+                "stagnation_horizon": 4,
+                "reward_mode": "linear_improvement",
+                "reward_epsilon": 1e-9,
+            },
+        )
+        self.assertEqual(result.config["td3"]["discount"], 1.0)
+        self.assertTrue(all(
+            episode["reward_mode"] == "linear_improvement"
+            for episode in result.training_records["episodes"]
+        ))
+
+    def test_rejects_invalid_environment_and_discount_parameters(self):
+        valid = self.make_config()
+        cases = (
+            ("c_min", True),
+            ("c_min", np.nan),
+            ("c_max", np.inf),
+            ("recent_window", 0),
+            ("recent_window", 3.0),
+            ("recent_window", True),
+            ("stagnation_horizon", -1),
+            ("stagnation_horizon", 2.0),
+            ("reward_mode", "LINEAR_IMPROVEMENT"),
+            ("reward_mode", True),
+            ("reward_epsilon", 0.0),
+            ("reward_epsilon", np.inf),
+            ("reward_epsilon", True),
+            ("discount", -0.1),
+            ("discount", 1.1),
+            ("discount", np.nan),
+            ("discount", True),
+        )
+        for name, value in cases:
+            with self.subTest(name=name, value=value):
+                with self.assertRaisesRegex(ValueError, name):
+                    replace(valid, **{name: value})
+
+        with self.assertRaisesRegex(ValueError, "c_min"):
+            replace(valid, c_min=1.0, c_max=0.5)
+
+        equal_bounds = replace(valid, c_min=0.75, c_max=0.75)
+        self.assertEqual(equal_bounds.c_min, equal_bounds.c_max)
 
 
 if __name__ == "__main__":

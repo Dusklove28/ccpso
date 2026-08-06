@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from environments.ccpso_env import REWARD_MODES
 from evaluation.evaluate_td3 import evaluate_td3_policy
 from evaluation.plot_run import plot_run
 from training.run_artifacts import save_classic_td3_run
@@ -130,6 +131,7 @@ def run_classic_td3_pipeline(
         "problem": result.problem_metadata,
         "training_seeds": training_seeds,
         "evaluation_seeds": evaluation_seed_values,
+        "experiment_config": result.config,
         "actor_probe": {
             "state": probe_state.tolist(),
             "action": probe_action.tolist(),
@@ -146,6 +148,12 @@ def run_classic_td3_pipeline(
         particles=config.particles,
         max_fe=config.max_fe,
         seeds=evaluation_seed_values,
+        c_min=config.c_min,
+        c_max=config.c_max,
+        recent_window=config.recent_window,
+        stagnation_horizon=config.stagnation_horizon,
+        reward_mode=config.reward_mode,
+        reward_epsilon=config.reward_epsilon,
     )
     evaluation_path = (run_path / "evaluation.json").resolve()
     _write_json(evaluation_path, evaluation)
@@ -166,6 +174,8 @@ def run_classic_td3_pipeline(
         "evaluation_seeds": evaluation_seed_values,
         "total_steps": int(result.training_records["total_steps"]),
         "total_updates": int(result.training_records["total_updates"]),
+        "reward_mode": result.config["environment"]["reward_mode"],
+        "discount": float(result.config["td3"]["discount"]),
         "evaluation_final_gap_statistics": evaluation[
             "final_gap_statistics"
         ],
@@ -198,6 +208,17 @@ def build_parser():
     parser.add_argument("--buffer-capacity", type=int, default=100_000)
     parser.add_argument("--exploration-noise", type=float, default=0.1)
     parser.add_argument("--updates-per-step", type=int, default=1)
+    parser.add_argument("--c-min", type=float, default=0.0)
+    parser.add_argument("--c-max", type=float, default=1.5)
+    parser.add_argument("--recent-window", type=int, default=5)
+    parser.add_argument("--stagnation-horizon", type=int, default=10)
+    parser.add_argument(
+        "--reward-mode",
+        choices=REWARD_MODES,
+        default="step_log_improvement",
+    )
+    parser.add_argument("--reward-epsilon", type=float, default=1e-12)
+    parser.add_argument("--discount", type=float, default=0.99)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--run-name", required=True)
     parser.add_argument(
@@ -229,6 +250,13 @@ def config_from_args(args):
         max_fe=args.max_fe,
         buffer_capacity=args.buffer_capacity,
         device=args.device,
+        c_min=args.c_min,
+        c_max=args.c_max,
+        recent_window=args.recent_window,
+        stagnation_horizon=args.stagnation_horizon,
+        reward_mode=args.reward_mode,
+        reward_epsilon=args.reward_epsilon,
+        discount=args.discount,
         online=online,
     )
 

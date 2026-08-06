@@ -122,6 +122,12 @@ class TestTD3OnlineTraining(unittest.TestCase):
             self.assertIs(episode["truncated"], False)
             self.assertTrue(np.isfinite(episode["return"]))
             self.assertTrue(np.isfinite(episode["final_best"]))
+            self.assertEqual(
+                episode["reward_mode"],
+                "step_log_improvement",
+            )
+            self.assertGreater(episode["initial_improvement_scale"], 0.0)
+            self.assertGreater(episode["initial_gap_scale"], 0.0)
             self.assertLessEqual(episode["c_min"], episode["c_mean"])
             self.assertLessEqual(episode["c_mean"], episode["c_max"])
             self.assertGreaterEqual(episode["c_min"], 0.0)
@@ -216,6 +222,7 @@ class TestTD3OnlineTraining(unittest.TestCase):
         for step in steps:
             self.assertIn(step["action_source"], ("warmup", "actor"))
             self.assertTrue(np.isfinite(step["reward"]))
+            self.assertTrue(np.isfinite(step["reward_progress"]))
             self.assertTrue(np.isfinite(step["episode_return"]))
             self.assertTrue(np.isfinite(step["gbest_fitness"]))
             self.assertGreaterEqual(step["gap"], 0.0)
@@ -265,7 +272,7 @@ class TestTD3OnlineTraining(unittest.TestCase):
             config.episodes,
         )
 
-        serialized = json.dumps(result)
+        serialized = json.dumps(result, allow_nan=False)
         self.assertIsInstance(serialized, str)
 
         for network_name in (

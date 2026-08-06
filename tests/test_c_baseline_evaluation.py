@@ -172,13 +172,40 @@ class TestCBaselineEvaluation(unittest.TestCase):
             td3_result["problem"],
         )
         self.assertEqual(
+            len(baseline_result["steps"]),
+            len(td3_result["steps"]),
+        )
+        for baseline_step, td3_step in zip(
             baseline_result["steps"],
             td3_result["steps"],
-        )
+        ):
+            self.assertEqual(
+                baseline_step,
+                {
+                    field: td3_step[field]
+                    for field in baseline_step
+                },
+            )
+            self.assertIn("reward_progress", td3_step)
+
         self.assertEqual(
+            len(baseline_result["episodes"]),
+            len(td3_result["episodes"]),
+        )
+        for baseline_episode, td3_episode in zip(
             baseline_result["episodes"],
             td3_result["episodes"],
-        )
+        ):
+            self.assertEqual(
+                baseline_episode,
+                {
+                    field: td3_episode[field]
+                    for field in baseline_episode
+                },
+            )
+            self.assertIn("reward_mode", td3_episode)
+            self.assertIn("initial_improvement_scale", td3_episode)
+            self.assertIn("initial_gap_scale", td3_episode)
         self.assertEqual(
             baseline_result["final_gap_statistics"],
             td3_result["final_gap_statistics"],

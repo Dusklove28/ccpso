@@ -1,4 +1,6 @@
 import json
+import csv
+from dataclasses import replace
 from pathlib import Path
 import sys
 import tempfile
@@ -122,6 +124,11 @@ class TestClassicTD3Pipeline(unittest.TestCase):
             )
             self.assertEqual(summary["total_steps"], 6)
             self.assertEqual(summary["total_updates"], 2)
+            self.assertEqual(
+                summary["reward_mode"],
+                "step_log_improvement",
+            )
+            self.assertEqual(summary["discount"], 0.99)
 
             restored_policy = TD3(
                 state_dim=6,
@@ -143,6 +150,17 @@ class TestClassicTD3Pipeline(unittest.TestCase):
             self.assertEqual(
                 checkpoint_metadata["evaluation_seeds"],
                 evaluation_seeds,
+            )
+            stored_config = json.loads(
+                Path(paths["config"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                checkpoint_metadata["experiment_config"],
+                stored_config,
+            )
+            self.assertEqual(
+                evaluation["environment"],
+                stored_config["environment"],
             )
 
             original_bytes = {
@@ -210,6 +228,20 @@ class TestClassicTD3Pipeline(unittest.TestCase):
                 "0.07",
                 "--updates-per-step",
                 "3",
+                "--c-min",
+                "0.2",
+                "--c-max",
+                "1.2",
+                "--recent-window",
+                "3",
+                "--stagnation-horizon",
+                "4",
+                "--reward-mode",
+                "linear_improvement",
+                "--reward-epsilon",
+                "1e-9",
+                "--discount",
+                "1.0",
                 "--output-root",
                 "pipeline-output",
                 "--run-name",
@@ -233,9 +265,136 @@ class TestClassicTD3Pipeline(unittest.TestCase):
         self.assertEqual(config.online.seed, 321)
         self.assertEqual(config.online.exploration_noise, 0.07)
         self.assertEqual(config.online.updates_per_step, 3)
+        self.assertEqual(config.c_min, 0.2)
+        self.assertEqual(config.c_max, 1.2)
+        self.assertEqual(config.recent_window, 3)
+        self.assertEqual(config.stagnation_horizon, 4)
+        self.assertEqual(config.reward_mode, "linear_improvement")
+        self.assertEqual(config.reward_epsilon, 1e-9)
+        self.assertEqual(config.discount, 1.0)
         self.assertEqual(args.output_root, Path("pipeline-output"))
         self.assertEqual(args.run_name, "cli-run")
         self.assertEqual(args.evaluation_seeds, [9001, 9002])
+
+    def test_cli_defaults_preserve_previous_experiment_behavior(self):
+        args = parse_args([
+            "--output-root",
+            "pipeline-output",
+            "--run-name",
+            "default-run",
+            "--evaluation-seeds",
+            "9001",
+        ])
+        config = config_from_args(args)
+
+        self.assertEqual(config.c_min, 0.0)
+        self.assertEqual(config.c_max, 1.5)
+        self.assertEqual(config.recent_window, 5)
+        self.assertEqual(config.stagnation_horizon, 10)
+        self.assertEqual(config.reward_mode, "step_log_improvement")
+        self.assertEqual(config.reward_epsilon, 1e-12)
+        self.assertEqual(config.discount, 0.99)
+
+    def test_linear_discount_one_propagates_to_every_artifact(self):
+        config = replace(
+            self.make_config(),
+            c_min=0.2,
+            c_max=1.2,
+            recent_window=3,
+            stagnation_horizon=4,
+            reward_mode="linear_improvement",
+            reward_epsilon=1e-9,
+            discount=1.0,
+        )
+        expected_environment = {
+            "c_min": 0.2,
+            "c_max": 1.2,
+            "recent_window": 3,
+            "stagnation_horizon": 4,
+            "reward_mode": "linear_improvement",
+            "reward_epsilon": 1e-9,
+        }
+
+        with tempfile.TemporaryDirectory(dir=PROJECT_ROOT) as temp_dir:
+            pipeline = run_classic_td3_pipeline(
+                config,
+                output_root=temp_dir,
+                run_name="linear-discount-one",
+                evaluation_seeds=[2_001],
+            )
+            paths = pipeline["paths"]
+            stored_config = json.loads(
+                Path(paths["config"]).read_text(encoding="utf-8")
+            )
+            stored_summary = json.loads(
+                Path(paths["summary"]).read_text(encoding="utf-8")
+            )
+            evaluation = json.loads(
+                Path(paths["evaluation"]).read_text(encoding="utf-8")
+            )
+            restored_policy = TD3(6, 1, 1.0, device="cpu")
+            metadata = restored_policy.load_checkpoint(
+                paths["checkpoint"],
+                load_optimizers=False,
+            )
+            with Path(paths["steps"]).open(
+                "r", encoding="utf-8", newline=""
+            ) as file:
+                step_reader = csv.DictReader(file)
+                step_rows = list(step_reader)
+            with Path(paths["episodes"]).open(
+                "r", encoding="utf-8", newline=""
+            ) as file:
+                episode_reader = csv.DictReader(file)
+                episode_rows = list(episode_reader)
+
+        self.assertEqual(stored_config["environment"], expected_environment)
+        self.assertEqual(stored_config["td3"]["discount"], 1.0)
+        for duplicate in expected_environment:
+            self.assertNotIn(duplicate, stored_config)
+        self.assertEqual(stored_summary["reward_mode"], "linear_improvement")
+        self.assertEqual(stored_summary["discount"], 1.0)
+        self.assertEqual(
+            metadata["experiment_config"],
+            stored_config,
+        )
+        self.assertEqual(evaluation["environment"], expected_environment)
+        self.assertEqual(
+            pipeline["summary"]["reward_mode"],
+            "linear_improvement",
+        )
+        self.assertEqual(pipeline["summary"]["discount"], 1.0)
+        self.assertIn("reward_progress", step_reader.fieldnames)
+        self.assertIn("reward_mode", episode_reader.fieldnames)
+        self.assertIn("initial_improvement_scale", episode_reader.fieldnames)
+        self.assertIn("initial_gap_scale", episode_reader.fieldnames)
+        self.assertTrue(step_rows)
+        self.assertTrue(episode_rows)
+        self.assertTrue(all(
+            row["reward_mode"] == "linear_improvement"
+            for row in episode_rows
+        ))
+        self.assertTrue(all(
+            episode["reward_mode"] == "linear_improvement"
+            for episode in evaluation["episodes"]
+        ))
+        self.assertTrue(all(
+            "reward_progress" in step
+            for step in evaluation["steps"]
+        ))
+        self.assertIsInstance(
+            json.dumps(
+                {
+                    "config": stored_config,
+                    "summary": stored_summary,
+                    "evaluation": evaluation,
+                    "pipeline": pipeline,
+                    "metadata": metadata,
+                },
+                allow_nan=False,
+            ),
+            str,
+        )
 
 
 if __name__ == "__main__":

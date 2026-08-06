@@ -20,6 +20,10 @@ def evaluate_td3_policy(
     seeds,
     c_min: float = 0.0,
     c_max: float = 1.5,
+    recent_window: int = 5,
+    stagnation_horizon: int = 10,
+    reward_mode: str = "step_log_improvement",
+    reward_epsilon: float = 1e-12,
 ):
     """Evaluate one deterministic TD3 policy without training or replay."""
     if not isinstance(problem, ProblemSpec):
@@ -28,6 +32,7 @@ def evaluate_td3_policy(
 
     episode_records = []
     step_records = []
+    environment_metadata = None
 
     for seed in evaluation_seeds:
         env = make_ccpso_env(
@@ -37,13 +42,31 @@ def evaluate_td3_policy(
             seed=seed,
             c_min=c_min,
             c_max=c_max,
+            recent_window=recent_window,
+            stagnation_horizon=stagnation_horizon,
+            reward_mode=reward_mode,
+            reward_epsilon=reward_epsilon,
         )
+        current_environment = {
+            "c_min": float(env.c_min),
+            "c_max": float(env.c_max),
+            "recent_window": int(env.recent_window),
+            "stagnation_horizon": int(env.stagnation_horizon),
+            "reward_mode": env.reward_mode,
+            "reward_epsilon": float(env.reward_epsilon),
+        }
+        if environment_metadata is None:
+            environment_metadata = current_environment
+        elif current_environment != environment_metadata:
+            raise RuntimeError(
+                "evaluation environment configuration changed across seeds"
+            )
         episode_return = 0.0
         episode_step = 0
         c_values = []
 
         try:
-            state, _ = env.reset(seed=seed)
+            state, reset_info = env.reset(seed=seed)
             terminated = False
             truncated = False
 
@@ -95,6 +118,9 @@ def evaluate_td3_policy(
                         "raw_action": float(info["raw_action"]),
                         "c_value": float(info["conv"]),
                         "reward": float(reward),
+                        "reward_progress": float(
+                            info["reward_progress"]
+                        ),
                         "state_fe_progress": float(action_state[0]),
                         "state_recent_progress": float(action_state[1]),
                         "state_position_diversity": float(
@@ -126,6 +152,13 @@ def evaluate_td3_policy(
                     "steps": int(episode_step),
                     "final_fe": int(env.swarm.fe_count),
                     "return": float(episode_return),
+                    "reward_mode": reset_info["reward_mode"],
+                    "initial_improvement_scale": float(
+                        reset_info["initial_improvement_scale"]
+                    ),
+                    "initial_gap_scale": float(
+                        reset_info["initial_gap_scale"]
+                    ),
                     "c_mean": float(np.mean(c_array)),
                     "c_min": float(np.min(c_array)),
                     "c_max": float(np.max(c_array)),
@@ -140,6 +173,7 @@ def evaluate_td3_policy(
     )
     return {
         "problem": serialize_problem(problem),
+        "environment": environment_metadata,
         "episodes": episode_records,
         "steps": step_records,
         "final_gap_statistics": {

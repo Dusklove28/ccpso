@@ -83,7 +83,7 @@ def train_online(env, policy, replay_buffer, config):
 
     for episode_index in range(config.episodes):
         episode_seed = config.seed + episode_index
-        state, _ = env.reset(seed=episode_seed)
+        state, reset_info = env.reset(seed=episode_seed)
         episode_return = 0.0
         episode_steps = 0
         c_values = []
@@ -155,6 +155,7 @@ def train_online(env, policy, replay_buffer, config):
                     "episode_step": int(episode_steps),
                     "action_source": action_source,
                     "reward": float(reward),
+                    "reward_progress": float(info["reward_progress"]),
                     "episode_return": float(episode_return),
                     "fe_count": int(info["fe_count"]),
                     "gbest_fitness": float(info["gbest_fitness"]),
@@ -203,6 +204,13 @@ def train_online(env, policy, replay_buffer, config):
                 "seed": int(episode_seed),
                 "steps": int(episode_steps),
                 "return": float(episode_return),
+                "reward_mode": reset_info["reward_mode"],
+                "initial_improvement_scale": float(
+                    reset_info["initial_improvement_scale"]
+                ),
+                "initial_gap_scale": float(
+                    reset_info["initial_gap_scale"]
+                ),
                 "final_fe": int(env.swarm.fe_count),
                 "final_best": float(env.swarm.gbest_fitness),
                 "terminated": bool(terminated),

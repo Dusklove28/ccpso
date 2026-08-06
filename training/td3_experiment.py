@@ -6,6 +6,7 @@ import torch
 
 from agents.td3.replay_buffer import ReplayBuffer
 from agents.td3.td3 import TD3
+from environments.ccpso_env import REWARD_MODES
 from environments.factory import make_ccpso_env
 from problems.classic import make_classic_problem
 from training.td3_online import TD3OnlineConfig, train_online
@@ -26,6 +27,12 @@ class ClassicTD3ExperimentConfig:
     policy_noise: float = 0.2
     noise_clip: float = 0.5
     policy_freq: int = 2
+    c_min: float = 0.0
+    c_max: float = 1.5
+    recent_window: int = 5
+    stagnation_horizon: int = 10
+    reward_mode: str = "step_log_improvement"
+    reward_epsilon: float = 1e-12
 
     def __post_init__(self):
         if (
@@ -43,6 +50,8 @@ class ClassicTD3ExperimentConfig:
             "max_fe",
             "buffer_capacity",
             "policy_freq",
+            "recent_window",
+            "stagnation_horizon",
         ):
             value = getattr(self, name)
             if (
@@ -96,6 +105,57 @@ class ClassicTD3ExperimentConfig:
                 )
             object.__setattr__(self, name, float(value))
 
+        for name in ("c_min", "c_max"):
+            value = getattr(self, name)
+            if (
+                isinstance(value, (bool, np.bool_))
+                or not isinstance(
+                    value,
+                    (int, float, np.integer, np.floating),
+                )
+                or not np.isfinite(value)
+            ):
+                raise ValueError(
+                    f"{name} must be a finite real number, got {value!r}"
+                )
+            object.__setattr__(self, name, float(value))
+        if self.c_min > self.c_max:
+            raise ValueError(
+                "c_min must be <= c_max, got "
+                f"c_min={self.c_min!r}, c_max={self.c_max!r}"
+            )
+
+        if not isinstance(self.reward_mode, str):
+            raise ValueError(
+                "reward_mode must be a string, got "
+                f"{self.reward_mode!r}"
+            )
+        if self.reward_mode not in REWARD_MODES:
+            raise ValueError(
+                f"reward_mode must be one of {REWARD_MODES}, "
+                f"got {self.reward_mode!r}"
+            )
+
+        reward_epsilon = self.reward_epsilon
+        if (
+            isinstance(reward_epsilon, (bool, np.bool_))
+            or not isinstance(
+                reward_epsilon,
+                (int, float, np.integer, np.floating),
+            )
+            or not np.isfinite(reward_epsilon)
+            or float(reward_epsilon) <= 0.0
+        ):
+            raise ValueError(
+                "reward_epsilon must be a finite real number > 0, got "
+                f"{reward_epsilon!r}"
+            )
+        object.__setattr__(
+            self,
+            "reward_epsilon",
+            float(reward_epsilon),
+        )
+
 
 @dataclass(frozen=True)
 class ClassicTD3ExperimentResult:
@@ -123,6 +183,14 @@ def _serialize_config(config, resolved_device):
         "max_fe": int(config.max_fe),
         "buffer_capacity": int(config.buffer_capacity),
         "device": str(resolved_device),
+        "environment": {
+            "c_min": float(config.c_min),
+            "c_max": float(config.c_max),
+            "recent_window": int(config.recent_window),
+            "stagnation_horizon": int(config.stagnation_horizon),
+            "reward_mode": config.reward_mode,
+            "reward_epsilon": float(config.reward_epsilon),
+        },
         "td3": {
             "max_action": float(config.max_action),
             "discount": float(config.discount),
@@ -170,6 +238,12 @@ def run_classic_td3(config):
         particles=config.particles,
         max_fe=config.max_fe,
         seed=seed,
+        c_min=config.c_min,
+        c_max=config.c_max,
+        recent_window=config.recent_window,
+        stagnation_horizon=config.stagnation_horizon,
+        reward_mode=config.reward_mode,
+        reward_epsilon=config.reward_epsilon,
     )
 
     resolved_device = _resolve_device(config.device)
