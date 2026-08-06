@@ -1,27 +1,31 @@
-"""Deterministic evaluation of a frozen TD3 policy on CCPSO."""
+"""Deterministic CCPSO evaluation for non-learning C schedules."""
 
 import numpy as np
 
+from baselines.c_schedules import (
+    c_value_to_action,
+    make_fixed_c_schedule,
+    make_linear_c_schedule,
+)
 from environments.factory import make_ccpso_env
 from evaluation.common import (
-    STATE_FIELDS,
     serialize_problem,
     validate_evaluation_seeds,
 )
 from problems.spec import ProblemSpec
 
 
-def evaluate_td3_policy(
-    policy,
-    problem: ProblemSpec,
+def _evaluate_c_schedule(
+    problem,
     *,
-    particles: int,
-    max_fe: int,
+    particles,
+    max_fe,
     seeds,
-    c_min: float = 0.0,
-    c_max: float = 1.5,
+    c_min,
+    c_max,
+    baseline,
+    schedule_factory,
 ):
-    """Evaluate one deterministic TD3 policy without training or replay."""
     if not isinstance(problem, ProblemSpec):
         raise TypeError("problem must be an instance of ProblemSpec")
     evaluation_seeds = validate_evaluation_seeds(seeds)
@@ -44,34 +48,35 @@ def evaluate_td3_policy(
 
         try:
             state, _ = env.reset(seed=seed)
+            remaining_fe = env.swarm.max_fe - env.swarm.fe_count
+            num_steps = remaining_fe // env.swarm.particles
+            if num_steps < 1:
+                raise ValueError(
+                    "baseline evaluation requires at least one complete "
+                    "CCPSO step after reset"
+                )
+            schedule = schedule_factory(int(num_steps))
+
             terminated = False
             truncated = False
-
-            while not (terminated or truncated):
+            for planned_c in schedule:
                 action_state = np.asarray(
                     state,
                     dtype=np.float32,
                 ).copy()
                 if action_state.shape != (6,):
                     raise ValueError(
-                        "evaluate_td3_policy expected a six-dimensional "
-                        f"state, got shape {action_state.shape}"
+                        "C baseline evaluation expected a "
+                        "six-dimensional state, "
+                        f"got shape {action_state.shape}"
                     )
 
-                action = np.asarray(
-                    policy.select_action(action_state),
-                    dtype=np.float32,
+                action_value = c_value_to_action(
+                    planned_c,
+                    c_min,
+                    c_max,
                 )
-                if action.shape != env.action_space.shape:
-                    raise ValueError(
-                        "policy action has shape "
-                        f"{action.shape}, expected {env.action_space.shape}"
-                    )
-                if not np.all(np.isfinite(action)):
-                    raise FloatingPointError(
-                        f"policy action must be finite, got {action!r}"
-                    )
-
+                action = np.array([action_value], dtype=np.float32)
                 (
                     next_state,
                     reward,
@@ -107,9 +112,17 @@ def evaluate_td3_policy(
                 )
                 state = next_state
 
+                if terminated or truncated:
+                    break
+
             if truncated or not terminated:
                 raise RuntimeError(
                     f"evaluation for seed {seed} did not terminate by FE"
+                )
+            if episode_step != int(num_steps):
+                raise RuntimeError(
+                    f"evaluation for seed {seed} terminated after "
+                    f"{episode_step} steps; expected {num_steps}"
                 )
 
             c_array = np.asarray(c_values, dtype=np.float64)
@@ -139,6 +152,7 @@ def evaluate_td3_policy(
         dtype=np.float64,
     )
     return {
+        "baseline": baseline,
         "problem": serialize_problem(problem),
         "episodes": episode_records,
         "steps": step_records,
@@ -150,3 +164,67 @@ def evaluate_td3_policy(
             "max": float(np.max(final_gaps)),
         },
     }
+
+
+def evaluate_fixed_c(
+    problem: ProblemSpec,
+    *,
+    particles,
+    max_fe,
+    seeds,
+    c_value,
+    c_min=0.0,
+    c_max=1.5,
+):
+    """Evaluate one fixed C value through the CCPSO environment."""
+    validated_c = float(make_fixed_c_schedule(c_value, 1)[0])
+    c_value_to_action(validated_c, c_min, c_max)
+    return _evaluate_c_schedule(
+        problem,
+        particles=particles,
+        max_fe=max_fe,
+        seeds=seeds,
+        c_min=c_min,
+        c_max=c_max,
+        baseline={"name": "fixed_c", "c_value": validated_c},
+        schedule_factory=lambda num_steps: make_fixed_c_schedule(
+            validated_c,
+            num_steps,
+        ),
+    )
+
+
+def evaluate_linear_c(
+    problem: ProblemSpec,
+    *,
+    particles,
+    max_fe,
+    seeds,
+    c_start=1.5,
+    c_end=0.0,
+    c_min=0.0,
+    c_max=1.5,
+):
+    """Evaluate the deterministic schedule named ``linear_c``."""
+    validated_start = float(make_fixed_c_schedule(c_start, 1)[0])
+    validated_end = float(make_fixed_c_schedule(c_end, 1)[0])
+    c_value_to_action(validated_start, c_min, c_max)
+    c_value_to_action(validated_end, c_min, c_max)
+    return _evaluate_c_schedule(
+        problem,
+        particles=particles,
+        max_fe=max_fe,
+        seeds=seeds,
+        c_min=c_min,
+        c_max=c_max,
+        baseline={
+            "name": "linear_c",
+            "c_start": validated_start,
+            "c_end": validated_end,
+        },
+        schedule_factory=lambda num_steps: make_linear_c_schedule(
+            validated_start,
+            validated_end,
+            num_steps,
+        ),
+    )
