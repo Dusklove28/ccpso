@@ -1,5 +1,6 @@
 from pathlib import Path
 from dataclasses import replace
+import hashlib
 import json
 import sys
 import unittest
@@ -15,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from training.td3_experiment import (
     ClassicTD3ExperimentConfig,
+    run_td3_problem,
     run_classic_td3,
 )
 from training.td3_online import TD3OnlineConfig
@@ -150,7 +152,35 @@ class TestClassicTD3Experiment(unittest.TestCase):
         )
         config = self.make_config()
 
-        first_result = run_classic_td3(config)
+        with patch(
+            "training.td3_experiment.run_td3_problem",
+            wraps=run_td3_problem,
+        ) as common_entry:
+            first_result = run_classic_td3(config)
+        common_entry.assert_called_once()
+        called_problem, called_config = common_entry.call_args.args
+        self.assertEqual(called_problem.suite, "classic")
+        self.assertEqual(called_problem.problem_id, "sphere")
+        self.assertIs(called_config, config)
+
+        records_bytes = json.dumps(
+            first_result.training_records,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        actor_bytes = b"".join(
+            parameter.detach().cpu().numpy().tobytes()
+            for parameter in first_result.policy.actor.parameters()
+        )
+        self.assertEqual(
+            hashlib.sha256(records_bytes).hexdigest(),
+            "86c31ed683dbdeb3363fe9840e02ba84c11739333977bfb2595beef69992f80b",
+        )
+        self.assertEqual(
+            hashlib.sha256(actor_bytes).hexdigest(),
+            "73c43325d7893e966e0aaca491ef57d5c402ea408e8c0330d3b5919490322112",
+        )
         first_actor_parameters = [
             parameter.detach().clone()
             for parameter in first_result.policy.actor.parameters()
