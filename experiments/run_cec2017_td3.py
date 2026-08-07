@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from environments.ccpso_env import REWARD_MODES
+from environments.ccpso_env import REWARD_MODES, STATE_MODES
 from experiments.td3_pipeline import run_td3_pipeline
 from problems.cec2017 import (
     CEC2017_FUNCTION_IDS,
@@ -55,6 +55,11 @@ def build_parser():
         default="step_log_improvement",
     )
     parser.add_argument("--reward-epsilon", type=float, default=1e-12)
+    parser.add_argument(
+        "--state-mode",
+        choices=STATE_MODES,
+        default="legacy_v1",
+    )
     parser.add_argument("--discount", type=float, default=0.99)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--run-name", required=True)
@@ -98,6 +103,7 @@ def config_from_args(args):
         stagnation_horizon=args.stagnation_horizon,
         reward_mode=args.reward_mode,
         reward_epsilon=args.reward_epsilon,
+        state_mode=args.state_mode,
         discount=args.discount,
         online=online,
     )

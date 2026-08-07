@@ -125,6 +125,8 @@ class TestCEC2017TD3CLI(unittest.TestCase):
                 "linear_improvement",
                 "--reward-epsilon",
                 "1e-9",
+                "--state-mode",
+                "relative_log_v2",
                 "--discount",
                 "1.0",
                 "--output-root",
@@ -142,6 +144,7 @@ class TestCEC2017TD3CLI(unittest.TestCase):
         self.assertEqual(config.device, "cpu")
         self.assertEqual(config.reward_mode, "linear_improvement")
         self.assertEqual(config.reward_epsilon, 1e-9)
+        self.assertEqual(config.state_mode, "relative_log_v2")
         self.assertEqual(config.discount, 1.0)
         self.assertEqual(config.online.episodes, 4)
         self.assertEqual(config.online.learning_starts, 11)
@@ -171,11 +174,11 @@ class TestCEC2017TD3Pipeline(unittest.TestCase):
             for child in value:
                 self.assert_finite_tree(child)
 
-    def test_f23_lightweight_complete_cli_pipeline(self):
+    def test_f12_relative_v2_lightweight_complete_cli_pipeline(self):
         with tempfile.TemporaryDirectory(dir=PROJECT_ROOT) as temp_dir:
             argv = [
                 "--function-id",
-                "23",
+                "12",
                 "--dimensions",
                 "10",
                 "--particles",
@@ -205,10 +208,12 @@ class TestCEC2017TD3Pipeline(unittest.TestCase):
                 "linear_improvement",
                 "--discount",
                 "1.0",
+                "--state-mode",
+                "relative_log_v2",
                 "--output-root",
                 temp_dir,
                 "--run-name",
-                "cec2017-f23-smoke",
+                "cec2017-f12-v2-smoke",
             ]
             with patch(
                 "experiments.run_cec2017_td3.run_td3_pipeline",
@@ -217,7 +222,7 @@ class TestCEC2017TD3Pipeline(unittest.TestCase):
                 pipeline = main(argv)
             common_pipeline.assert_called_once()
 
-            run_dir = Path(temp_dir) / "cec2017-f23-smoke"
+            run_dir = Path(temp_dir) / "cec2017-f12-v2-smoke"
             paths = pipeline["paths"]
             required = {
                 "config": run_dir / "config.json",
@@ -241,22 +246,35 @@ class TestCEC2017TD3Pipeline(unittest.TestCase):
             summary = strict_json_load(paths["summary"])
             evaluation = strict_json_load(paths["evaluation"])
             expected_problem_fields = {
-                "problem_id": 23,
-                "source_function_id": 24,
-                "category": "composition",
-                "optimum": 2400.0,
+                "problem_id": 12,
+                "source_function_id": 13,
+                "category": "hybrid",
+                "optimum": 1300.0,
             }
             for field, expected in expected_problem_fields.items():
                 self.assertEqual(problem[field], expected)
                 self.assertEqual(evaluation["problem"][field], expected)
-            self.assertEqual(summary["source_function_id"], 24)
-            self.assertEqual(summary["category"], "composition")
+            self.assertEqual(summary["source_function_id"], 13)
+            self.assertEqual(summary["category"], "hybrid")
             self.assertEqual(config["dimensions"], 10)
             self.assertEqual(
                 config["environment"]["reward_mode"],
                 "linear_improvement",
             )
             self.assertEqual(config["td3"]["discount"], 1.0)
+            self.assertEqual(
+                config["environment"]["state_mode"],
+                "relative_log_v2",
+            )
+            self.assertEqual(summary["state_mode"], "relative_log_v2")
+            self.assertEqual(
+                pipeline["summary"]["state_mode"],
+                "relative_log_v2",
+            )
+            self.assertEqual(
+                evaluation["environment"]["state_mode"],
+                "relative_log_v2",
+            )
 
             with Path(paths["steps"]).open(
                 "r", encoding="utf-8", newline=""
@@ -273,6 +291,22 @@ class TestCEC2017TD3Pipeline(unittest.TestCase):
             self.assertEqual(len(step_rows), 3)
             self.assertEqual(len(episode_rows), 1)
             self.assertEqual(len(update_rows), 3)
+            self.assertEqual(
+                episode_rows[0]["state_mode"],
+                "relative_log_v2",
+            )
+            self.assertGreater(
+                float(episode_rows[0]["initial_position_scale"]),
+                0.0,
+            )
+            self.assertGreater(
+                float(episode_rows[0]["initial_q_scale"]),
+                0.0,
+            )
+            self.assertEqual(
+                int(episode_rows[0]["max_episode_updates"]),
+                3,
+            )
 
             self.assertEqual(
                 [episode["seed"] for episode in evaluation["episodes"]],
@@ -281,6 +315,13 @@ class TestCEC2017TD3Pipeline(unittest.TestCase):
             for episode in evaluation["episodes"]:
                 self.assertEqual(episode["steps"], 3)
                 self.assertEqual(episode["final_fe"], 16)
+                self.assertEqual(
+                    episode["state_mode"],
+                    "relative_log_v2",
+                )
+                self.assertGreater(episode["initial_position_scale"], 0.0)
+                self.assertGreater(episode["initial_q_scale"], 0.0)
+                self.assertEqual(episode["max_episode_updates"], 3)
             self.assertEqual(len(evaluation["steps"]), 6)
             self.assert_finite_tree(evaluation)
 
@@ -297,6 +338,12 @@ class TestCEC2017TD3Pipeline(unittest.TestCase):
             self.assertEqual(
                 checkpoint_metadata["experiment_config"],
                 config,
+            )
+            self.assertEqual(
+                checkpoint_metadata["experiment_config"]["environment"][
+                    "state_mode"
+                ],
+                "relative_log_v2",
             )
             probe = checkpoint_metadata["actor_probe"]
             np.testing.assert_array_equal(

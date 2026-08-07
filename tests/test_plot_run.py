@@ -15,7 +15,12 @@ if str(PROJECT_ROOT) not in sys.path:
 import matplotlib
 
 from evaluation.evaluate_td3 import evaluate_td3_policy
-from evaluation.plot_run import FIGURE_FILENAMES, build_plot_data, plot_run
+from evaluation.plot_run import (
+    FIGURE_FILENAMES,
+    _run_label,
+    build_plot_data,
+    plot_run,
+)
 from matplotlib import pyplot as plt
 from training.run_artifacts import save_classic_td3_run
 from training.td3_experiment import (
@@ -65,6 +70,14 @@ def _save_complete_run(result, run_dir):
 
 
 class PlotRunTests(unittest.TestCase):
+    def test_title_uses_state_mode_and_legacy_fallback(self):
+        problem = {"name": "Sphere", "dimensions": 3}
+        config = {"online": {"seed": 17}, "environment": {}}
+        self.assertIn("state=legacy_v1", _run_label(config, problem))
+
+        config["environment"]["state_mode"] = "relative_log_v2"
+        self.assertIn("state=relative_log_v2", _run_label(config, problem))
+
     def assert_valid_pngs(self, paths):
         self.assertEqual(set(paths), set(FIGURE_FILENAMES))
         for name, filename in FIGURE_FILENAMES.items():
@@ -173,6 +186,14 @@ class PlotRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=PROJECT_ROOT) as temp_dir:
             run_dir = Path(temp_dir) / "legacy-run"
             _, evaluation = _save_complete_run(result, run_dir)
+
+            config_path = run_dir / "config.json"
+            legacy_config = json.loads(config_path.read_text(encoding="utf-8"))
+            legacy_config["environment"].pop("state_mode")
+            config_path.write_text(
+                json.dumps(legacy_config, indent=2, allow_nan=False) + "\n",
+                encoding="utf-8",
+            )
 
             for episode in evaluation["episodes"]:
                 episode.pop("initial_fe")

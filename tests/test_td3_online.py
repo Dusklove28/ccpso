@@ -58,6 +58,55 @@ class TestTD3OnlineConfig(unittest.TestCase):
 
 
 class TestTD3OnlineTraining(unittest.TestCase):
+    def test_relative_v2_episode_records_reset_scales(self):
+        seed = 77
+        env = CCPSOEnv(
+            swarm=CCPSOSwarm(
+                particles=4,
+                dimensions=3,
+                fun=sphere,
+                lower_bound=-100.0,
+                upper_bound=100.0,
+                max_fe=16,
+                seed=seed,
+            ),
+            c_min=0.0,
+            c_max=1.5,
+            optimum=0.0,
+            state_mode="relative_log_v2",
+        )
+        device = torch.device("cpu")
+        policy = TD3(6, 1, 1.0, device=device)
+        replay_buffer = ReplayBuffer(
+            6,
+            1,
+            max_size=8,
+            seed=seed,
+            device=device,
+        )
+        result = train_online(
+            env,
+            policy,
+            replay_buffer,
+            TD3OnlineConfig(
+                episodes=1,
+                learning_starts=100,
+                batch_size=2,
+                exploration_noise=0.0,
+                updates_per_step=1,
+                seed=seed,
+            ),
+        )
+
+        episode = result["episodes"][0]
+        self.assertEqual(episode["state_mode"], "relative_log_v2")
+        self.assertGreater(episode["initial_position_scale"], 0.0)
+        self.assertGreater(episode["initial_q_scale"], 0.0)
+        self.assertEqual(episode["max_episode_updates"], 3)
+        self.assertTrue(all(
+            "state_mode" not in step for step in result["steps"]
+        ))
+
     def test_real_td3_ccpso_online_training(self):
         seed = 123
         random.seed(seed)
@@ -128,6 +177,10 @@ class TestTD3OnlineTraining(unittest.TestCase):
             )
             self.assertGreater(episode["initial_improvement_scale"], 0.0)
             self.assertGreater(episode["initial_gap_scale"], 0.0)
+            self.assertEqual(episode["state_mode"], "legacy_v1")
+            self.assertIsNone(episode["initial_position_scale"])
+            self.assertIsNone(episode["initial_q_scale"])
+            self.assertIsNone(episode["max_episode_updates"])
             self.assertLessEqual(episode["c_min"], episode["c_mean"])
             self.assertLessEqual(episode["c_mean"], episode["c_max"])
             self.assertGreaterEqual(episode["c_min"], 0.0)
@@ -224,6 +277,7 @@ class TestTD3OnlineTraining(unittest.TestCase):
                 )
 
         for step in steps:
+            self.assertNotIn("state_mode", step)
             self.assertIn(step["action_source"], ("warmup", "actor"))
             self.assertTrue(np.isfinite(step["reward"]))
             self.assertTrue(np.isfinite(step["reward_progress"]))

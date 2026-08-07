@@ -130,6 +130,7 @@ class TestRunArtifacts(unittest.TestCase):
                 "step_log_improvement",
             )
             self.assertEqual(summary["discount"], 0.99)
+            self.assertEqual(summary["state_mode"], "legacy_v1")
             self.assertEqual(summary["episode_count"], 2)
             self.assertEqual(summary["total_steps"], 6)
             self.assertEqual(summary["total_updates"], 2)
@@ -169,6 +170,24 @@ class TestRunArtifacts(unittest.TestCase):
             self.assertIn("reward_mode", EPISODE_COLUMNS)
             self.assertIn("initial_improvement_scale", EPISODE_COLUMNS)
             self.assertIn("initial_gap_scale", EPISODE_COLUMNS)
+            self.assertEqual(
+                EPISODE_COLUMNS[-4:],
+                (
+                    "state_mode",
+                    "initial_position_scale",
+                    "initial_q_scale",
+                    "max_episode_updates",
+                ),
+            )
+            with Path(paths["episodes"]).open(
+                "r", encoding="utf-8", newline=""
+            ) as file:
+                episode_rows = list(csv.DictReader(file))
+            for row in episode_rows:
+                self.assertEqual(row["state_mode"], "legacy_v1")
+                self.assertEqual(row["initial_position_scale"], "")
+                self.assertEqual(row["initial_q_scale"], "")
+                self.assertEqual(row["max_episode_updates"], "")
 
     def test_zero_updates_keeps_complete_header(self):
         result = self.make_result(learning_starts=100)

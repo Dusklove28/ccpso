@@ -125,6 +125,61 @@ class TestTD3Evaluation(unittest.TestCase):
         self.assertEqual(action.shape, (1,))
         self.assertTrue(np.all(np.isfinite(action)))
 
+    def test_state_mode_metadata_and_fe_lifecycle(self):
+        policy = Mock()
+        policy.select_action.return_value = np.array(
+            [0.0],
+            dtype=np.float32,
+        )
+        problem = make_classic_problem("sphere", dimensions=3)
+        common = {
+            "particles": 4,
+            "max_fe": 16,
+            "seeds": [91],
+        }
+
+        legacy = evaluate_td3_policy(
+            policy,
+            problem,
+            state_mode="legacy_v1",
+            **common,
+        )
+        relative = evaluate_td3_policy(
+            policy,
+            problem,
+            state_mode="relative_log_v2",
+            **common,
+        )
+
+        self.assertEqual(legacy["environment"]["state_mode"], "legacy_v1")
+        self.assertEqual(
+            relative["environment"]["state_mode"],
+            "relative_log_v2",
+        )
+        legacy_episode = legacy["episodes"][0]
+        relative_episode = relative["episodes"][0]
+        self.assertEqual(legacy_episode["state_mode"], "legacy_v1")
+        self.assertIsNone(legacy_episode["initial_position_scale"])
+        self.assertIsNone(legacy_episode["initial_q_scale"])
+        self.assertIsNone(legacy_episode["max_episode_updates"])
+        self.assertEqual(
+            relative_episode["state_mode"],
+            "relative_log_v2",
+        )
+        self.assertGreater(relative_episode["initial_position_scale"], 0.0)
+        self.assertGreater(relative_episode["initial_q_scale"], 0.0)
+        self.assertEqual(relative_episode["max_episode_updates"], 3)
+        for field in ("steps", "initial_fe", "final_fe"):
+            self.assertEqual(legacy_episode[field], relative_episode[field])
+        self.assertEqual(
+            [step["fe_count"] for step in legacy["steps"]],
+            [step["fe_count"] for step in relative["steps"]],
+        )
+        self.assertEqual(
+            legacy_episode["final_best"],
+            relative_episode["final_best"],
+        )
+
     def test_frozen_multi_seed_evaluation_is_complete_and_repeatable(self):
         problem = make_classic_problem("sphere", dimensions=3)
         seeds = [11, 12, 13]
@@ -178,6 +233,7 @@ class TestTD3Evaluation(unittest.TestCase):
                 "stagnation_horizon": 10,
                 "reward_mode": "step_log_improvement",
                 "reward_epsilon": 1e-12,
+                "state_mode": "legacy_v1",
             },
         )
 
@@ -194,6 +250,10 @@ class TestTD3Evaluation(unittest.TestCase):
             )
             self.assertGreater(episode["initial_improvement_scale"], 0.0)
             self.assertGreater(episode["initial_gap_scale"], 0.0)
+            self.assertEqual(episode["state_mode"], "legacy_v1")
+            self.assertIsNone(episode["initial_position_scale"])
+            self.assertIsNone(episode["initial_q_scale"])
+            self.assertIsNone(episode["max_episode_updates"])
             self.assertLessEqual(episode["c_min"], episode["c_mean"])
             self.assertLessEqual(episode["c_mean"], episode["c_max"])
 

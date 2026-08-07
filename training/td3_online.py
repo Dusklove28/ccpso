@@ -91,6 +91,19 @@ def train_online(env, policy, replay_buffer, config):
     for episode_index in range(config.episodes):
         episode_seed = config.seed + episode_index
         state, reset_info = env.reset(seed=episode_seed)
+        state_mode = reset_info.get("state_mode", "legacy_v1")
+        if state_mode == "relative_log_v2":
+            initial_position_scale = float(
+                reset_info["initial_position_scale"]
+            )
+            initial_q_scale = float(reset_info["initial_q_scale"])
+            max_episode_updates = int(
+                reset_info["max_episode_updates"]
+            )
+        else:
+            initial_position_scale = None
+            initial_q_scale = None
+            max_episode_updates = None
         reset_fe = int(env.swarm.fe_count)
         cumulative_training_fe += reset_fe
         episode_return = 0.0
@@ -240,6 +253,10 @@ def train_online(env, policy, replay_buffer, config):
                 "c_mean": float(np.mean(c_array)),
                 "c_min": float(np.min(c_array)),
                 "c_max": float(np.max(c_array)),
+                "state_mode": state_mode,
+                "initial_position_scale": initial_position_scale,
+                "initial_q_scale": initial_q_scale,
+                "max_episode_updates": max_episode_updates,
             }
         )
 

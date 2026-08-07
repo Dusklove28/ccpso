@@ -24,6 +24,7 @@ def evaluate_td3_policy(
     stagnation_horizon: int = 10,
     reward_mode: str = "step_log_improvement",
     reward_epsilon: float = 1e-12,
+    state_mode: str = "legacy_v1",
 ):
     """Evaluate one deterministic TD3 policy without training or replay."""
     if not isinstance(problem, ProblemSpec):
@@ -46,6 +47,7 @@ def evaluate_td3_policy(
             stagnation_horizon=stagnation_horizon,
             reward_mode=reward_mode,
             reward_epsilon=reward_epsilon,
+            state_mode=state_mode,
         )
         current_environment = {
             "c_min": float(env.c_min),
@@ -54,6 +56,7 @@ def evaluate_td3_policy(
             "stagnation_horizon": int(env.stagnation_horizon),
             "reward_mode": env.reward_mode,
             "reward_epsilon": float(env.reward_epsilon),
+            "state_mode": env.state_mode,
         }
         if environment_metadata is None:
             environment_metadata = current_environment
@@ -67,6 +70,22 @@ def evaluate_td3_policy(
 
         try:
             state, reset_info = env.reset(seed=seed)
+            episode_state_mode = reset_info.get(
+                "state_mode",
+                "legacy_v1",
+            )
+            if episode_state_mode == "relative_log_v2":
+                initial_position_scale = float(
+                    reset_info["initial_position_scale"]
+                )
+                initial_q_scale = float(reset_info["initial_q_scale"])
+                max_episode_updates = int(
+                    reset_info["max_episode_updates"]
+                )
+            else:
+                initial_position_scale = None
+                initial_q_scale = None
+                max_episode_updates = None
             initial_fe = int(env.swarm.fe_count)
             initial_best = float(env.swarm.gbest_fitness)
             initial_gap = float(
@@ -172,6 +191,10 @@ def evaluate_td3_policy(
                     "c_mean": float(np.mean(c_array)),
                     "c_min": float(np.min(c_array)),
                     "c_max": float(np.max(c_array)),
+                    "state_mode": episode_state_mode,
+                    "initial_position_scale": initial_position_scale,
+                    "initial_q_scale": initial_q_scale,
+                    "max_episode_updates": max_episode_updates,
                 }
             )
         finally:

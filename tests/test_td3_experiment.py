@@ -72,6 +72,7 @@ class TestClassicTD3Experiment(unittest.TestCase):
                 "stagnation_horizon": 10,
                 "reward_mode": "step_log_improvement",
                 "reward_epsilon": 1e-12,
+                "state_mode": "legacy_v1",
             },
         )
         self.assertEqual(result.config["td3"]["discount"], 0.99)
@@ -108,6 +109,10 @@ class TestClassicTD3Experiment(unittest.TestCase):
             )
             self.assertGreater(episode["initial_improvement_scale"], 0.0)
             self.assertGreater(episode["initial_gap_scale"], 0.0)
+            self.assertEqual(episode["state_mode"], "legacy_v1")
+            self.assertIsNone(episode["initial_position_scale"])
+            self.assertIsNone(episode["initial_q_scale"])
+            self.assertIsNone(episode["max_episode_updates"])
         for step in records["steps"]:
             self.assertTrue(np.isfinite(step["reward_progress"]))
 
@@ -163,8 +168,24 @@ class TestClassicTD3Experiment(unittest.TestCase):
         self.assertEqual(called_problem.problem_id, "sphere")
         self.assertIs(called_config, config)
 
+        legacy_records = {
+            **first_result.training_records,
+            "episodes": [
+                {
+                    key: value
+                    for key, value in episode.items()
+                    if key not in {
+                        "state_mode",
+                        "initial_position_scale",
+                        "initial_q_scale",
+                        "max_episode_updates",
+                    }
+                }
+                for episode in first_result.training_records["episodes"]
+            ],
+        }
         records_bytes = json.dumps(
-            first_result.training_records,
+            legacy_records,
             sort_keys=True,
             separators=(",", ":"),
             allow_nan=False,
@@ -208,6 +229,7 @@ class TestClassicTD3Experiment(unittest.TestCase):
             stagnation_horizon=4,
             reward_mode="linear_improvement",
             reward_epsilon=1e-9,
+            state_mode="relative_log_v2",
             discount=1.0,
         )
 
@@ -224,6 +246,7 @@ class TestClassicTD3Experiment(unittest.TestCase):
         self.assertEqual(forwarded["stagnation_horizon"], 4)
         self.assertEqual(forwarded["reward_mode"], "linear_improvement")
         self.assertEqual(forwarded["reward_epsilon"], 1e-9)
+        self.assertEqual(forwarded["state_mode"], "relative_log_v2")
         self.assertEqual(
             result.config["environment"],
             {
@@ -233,6 +256,7 @@ class TestClassicTD3Experiment(unittest.TestCase):
                 "stagnation_horizon": 4,
                 "reward_mode": "linear_improvement",
                 "reward_epsilon": 1e-9,
+                "state_mode": "relative_log_v2",
             },
         )
         self.assertEqual(result.config["td3"]["discount"], 1.0)
@@ -257,6 +281,8 @@ class TestClassicTD3Experiment(unittest.TestCase):
             ("reward_epsilon", 0.0),
             ("reward_epsilon", np.inf),
             ("reward_epsilon", True),
+            ("state_mode", "RELATIVE_LOG_V2"),
+            ("state_mode", True),
             ("discount", -0.1),
             ("discount", 1.1),
             ("discount", np.nan),

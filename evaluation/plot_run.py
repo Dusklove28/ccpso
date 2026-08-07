@@ -43,7 +43,14 @@ def _read_csv(path):
 
 def _run_label(config, problem):
     seed = config["online"]["seed"]
-    return f'{problem["name"]} (D={int(problem["dimensions"])}, seed={seed})'
+    state_mode = config.get("environment", {}).get(
+        "state_mode",
+        "legacy_v1",
+    )
+    return (
+        f'{problem["name"]} (D={int(problem["dimensions"])}, '
+        f'seed={seed}, state={state_mode})'
+    )
 
 
 def _aggregate_curves(curves):

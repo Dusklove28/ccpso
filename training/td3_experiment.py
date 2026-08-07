@@ -6,7 +6,7 @@ import torch
 
 from agents.td3.replay_buffer import ReplayBuffer
 from agents.td3.td3 import TD3
-from environments.ccpso_env import REWARD_MODES
+from environments.ccpso_env import REWARD_MODES, STATE_MODES
 from environments.factory import make_ccpso_env
 from problems.classic import make_classic_problem
 from problems.metadata import serialize_problem
@@ -95,6 +95,17 @@ def _validate_common_config(config, integer_fields):
             f"got {config.reward_mode!r}"
         )
 
+    if not isinstance(config.state_mode, str):
+        raise ValueError(
+            "state_mode must be a string, got "
+            f"{config.state_mode!r}"
+        )
+    if config.state_mode not in STATE_MODES:
+        raise ValueError(
+            f"state_mode must be one of {STATE_MODES}, "
+            f"got {config.state_mode!r}"
+        )
+
     reward_epsilon = config.reward_epsilon
     if (
         isinstance(reward_epsilon, (bool, np.bool_))
@@ -131,6 +142,7 @@ class TD3ProblemExperimentConfig:
     stagnation_horizon: int = 10
     reward_mode: str = "step_log_improvement"
     reward_epsilon: float = 1e-12
+    state_mode: str = "legacy_v1"
 
     def __post_init__(self):
         _validate_common_config(
@@ -167,6 +179,7 @@ class ClassicTD3ExperimentConfig:
     stagnation_horizon: int = 10
     reward_mode: str = "step_log_improvement"
     reward_epsilon: float = 1e-12
+    state_mode: str = "legacy_v1"
 
     def __post_init__(self):
         if (
@@ -227,6 +240,7 @@ def _serialize_config(config, resolved_device, problem):
             "stagnation_horizon": int(config.stagnation_horizon),
             "reward_mode": config.reward_mode,
             "reward_epsilon": float(config.reward_epsilon),
+            "state_mode": config.state_mode,
         },
         "td3": {
             "max_action": float(config.max_action),
@@ -299,6 +313,7 @@ def run_td3_problem(problem: ProblemSpec, config):
         stagnation_horizon=config.stagnation_horizon,
         reward_mode=config.reward_mode,
         reward_epsilon=config.reward_epsilon,
+        state_mode=config.state_mode,
     )
 
     resolved_device = _resolve_device(config.device)

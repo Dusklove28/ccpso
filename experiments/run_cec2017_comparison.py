@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from environments.ccpso_env import REWARD_MODES
+from environments.ccpso_env import REWARD_MODES, STATE_MODES
 from evaluation.common import validate_evaluation_seeds
 from evaluation.evaluate_c_baselines import (
     evaluate_fixed_c,
@@ -89,6 +89,7 @@ class CEC2017ComparisonConfig:
     stagnation_horizon: int = 10
     reward_mode: str = "step_log_improvement"
     reward_epsilon: float = 1e-12
+    state_mode: str = "legacy_v1"
 
     def __post_init__(self):
         function_ids = _validate_function_ids(self.function_ids)
@@ -154,6 +155,7 @@ class CEC2017ComparisonConfig:
             "stagnation_horizon",
             "reward_mode",
             "reward_epsilon",
+            "state_mode",
         )
         for name in normalized_fields:
             object.__setattr__(self, name, getattr(probe, name))
@@ -193,6 +195,7 @@ class CEC2017ComparisonConfig:
             stagnation_horizon=self.stagnation_horizon,
             reward_mode=self.reward_mode,
             reward_epsilon=self.reward_epsilon,
+            state_mode=self.state_mode,
         )
 
     def td3_config_for_seed(self, training_seed):
@@ -233,6 +236,7 @@ class CEC2017ComparisonConfig:
                 "stagnation_horizon": self.stagnation_horizon,
                 "reward_mode": self.reward_mode,
                 "reward_epsilon": self.reward_epsilon,
+                "state_mode": self.state_mode,
             },
         }
 
@@ -573,6 +577,11 @@ def build_parser():
         default="step_log_improvement",
     )
     parser.add_argument("--reward-epsilon", type=float, default=1e-12)
+    parser.add_argument(
+        "--state-mode",
+        choices=STATE_MODES,
+        default="legacy_v1",
+    )
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--run-name", required=True)
     return parser
@@ -609,6 +618,7 @@ def config_from_args(args):
         stagnation_horizon=args.stagnation_horizon,
         reward_mode=args.reward_mode,
         reward_epsilon=args.reward_epsilon,
+        state_mode=args.state_mode,
     )
 
 

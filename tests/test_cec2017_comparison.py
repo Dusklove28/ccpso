@@ -99,6 +99,8 @@ class TestCEC2017ComparisonCLI(unittest.TestCase):
                 "linear_improvement",
                 "--discount",
                 "1.0",
+                "--state-mode",
+                "relative_log_v2",
             ]
         )
         config = config_from_args(args)
@@ -116,13 +118,20 @@ class TestCEC2017ComparisonCLI(unittest.TestCase):
         self.assertEqual(config.device, "cpu")
         self.assertEqual(config.reward_mode, "linear_improvement")
         self.assertEqual(config.discount, 1.0)
+        self.assertEqual(config.state_mode, "relative_log_v2")
+        self.assertEqual(
+            config.to_manifest_dict()["environment"]["state_mode"],
+            "relative_log_v2",
+        )
 
     def test_custom_public_ids_and_invalid_ids(self):
         args = parse_args(
             self.minimal_args()
             + ["--function-ids", "23", "1", "5"]
         )
-        self.assertEqual(config_from_args(args).function_ids, (23, 1, 5))
+        default_config = config_from_args(args)
+        self.assertEqual(default_config.function_ids, (23, 1, 5))
+        self.assertEqual(default_config.state_mode, "legacy_v1")
 
         for function_id in (0, 30):
             with self.subTest(function_id=function_id):
@@ -132,6 +141,23 @@ class TestCEC2017ComparisonCLI(unittest.TestCase):
                             self.minimal_args()
                             + ["--function-ids", str(function_id)]
                         )
+
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(io.StringIO()):
+                parse_args(
+                    self.minimal_args()
+                    + ["--state-mode", "RELATIVE_LOG_V2"]
+                )
+
+        with self.assertRaisesRegex(ValueError, "state_mode"):
+            CEC2017ComparisonConfig(
+                function_ids=[1],
+                particles=4,
+                max_fe=16,
+                training_seeds=[101],
+                evaluation_seeds=[201],
+                state_mode="RELATIVE_LOG_V2",
+            )
 
     def test_training_and_evaluation_seed_overlap_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "must not overlap"):
@@ -165,6 +191,7 @@ class TestCEC2017ComparisonPipeline(unittest.TestCase):
             device="cpu",
             reward_mode="linear_improvement",
             discount=1.0,
+            state_mode="relative_log_v2",
         )
 
     def assert_finite_tree(self, value):
@@ -243,6 +270,10 @@ class TestCEC2017ComparisonPipeline(unittest.TestCase):
             self.assertEqual(
                 manifest["config"]["evaluation_seeds"],
                 [201, 202],
+            )
+            self.assertEqual(
+                manifest["config"]["environment"]["state_mode"],
+                "relative_log_v2",
             )
 
             with Path(result["paths"]["per_run"]).open(
@@ -333,6 +364,12 @@ class TestCEC2017ComparisonPipeline(unittest.TestCase):
                     )
                     self.assertEqual(metadata["training_seeds"], [101])
                     self.assertEqual(metadata["evaluation_seeds"], [201, 202])
+                    self.assertEqual(
+                        metadata["experiment_config"]["environment"][
+                            "state_mode"
+                        ],
+                        "relative_log_v2",
+                    )
                 else:
                     self.assertIsNone(task["training_seed"])
                     self.assertIsNone(task["checkpoint"])

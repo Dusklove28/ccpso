@@ -166,6 +166,7 @@ def run_td3_pipeline(
         stagnation_horizon=config.stagnation_horizon,
         reward_mode=config.reward_mode,
         reward_epsilon=config.reward_epsilon,
+        state_mode=config.state_mode,
     )
     evaluation_path = (run_path / "evaluation.json").resolve()
     _write_json(evaluation_path, evaluation)
@@ -187,6 +188,10 @@ def run_td3_pipeline(
         "total_updates": int(result.training_records["total_updates"]),
         "reward_mode": result.config["environment"]["reward_mode"],
         "discount": float(result.config["td3"]["discount"]),
+        "state_mode": result.config["environment"].get(
+            "state_mode",
+            "legacy_v1",
+        ),
         "evaluation_final_gap_statistics": evaluation[
             "final_gap_statistics"
         ],

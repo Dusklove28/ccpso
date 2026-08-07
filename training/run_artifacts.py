@@ -54,6 +54,10 @@ EPISODE_COLUMNS = (
     "c_mean",
     "c_min",
     "c_max",
+    "state_mode",
+    "initial_position_scale",
+    "initial_q_scale",
+    "max_episode_updates",
 )
 
 UPDATE_COLUMNS = (
@@ -120,6 +124,10 @@ def _make_summary(result):
         "dimensions": int(result.problem_metadata["dimensions"]),
         "reward_mode": result.config["environment"]["reward_mode"],
         "discount": float(result.config["td3"]["discount"]),
+        "state_mode": result.config["environment"].get(
+            "state_mode",
+            "legacy_v1",
+        ),
         "episode_count": int(len(episodes)),
         "total_steps": int(records["total_steps"]),
         "total_updates": int(records["total_updates"]),
